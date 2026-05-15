@@ -697,65 +697,237 @@ function Analytics() {
   );
 }
 
+type Strategy = { id: string; name: string; description: string; params: Record<string, string> };
+
+const DEFAULT_STRATEGIES: Strategy[] = [
+  { id: "grid", name: "Grid Trading", description: "Places buy/sell orders at regular intervals within a price range", params: { gridLevels: "10", gridSpacing: "0.5", upperBound: "70000", lowerBound: "60000" } },
+  { id: "dca", name: "DCA (Dollar Cost Average)", description: "Buys at fixed intervals regardless of price", params: { interval: "4h", buyAmount: "100", maxBuys: "20" } },
+  { id: "momentum", name: "Momentum", description: "Follows trend breakouts using RSI and MACD signals", params: { rsiPeriod: "14", rsiOverbought: "70", rsiOversold: "30", macdFast: "12", macdSlow: "26" } },
+  { id: "arb", name: "Arbitrage", description: "Exploits price differences across exchanges", params: { minSpread: "0.3", maxLatency: "100" } },
+];
+
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button onClick={() => onChange(!value)} className={`w-10 h-5 rounded-full relative transition-colors ${value ? "bg-green" : "bg-secondary"}`}>
+      <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${value ? "translate-x-5" : "translate-x-0.5"}`} />
+    </button>
+  );
+}
+
 function Settings() {
   const [botEnabled, setBotEnabled] = useState(true);
   const [riskPct, setRiskPct] = useState("2");
   const [maxPos, setMaxPos] = useState("5");
+  const [stopLoss, setStopLoss] = useState("3");
+  const [takeProfit, setTakeProfit] = useState("6");
+  const [activeStrategy, setActiveStrategy] = useState("grid");
+  const [strategies, setStrategies] = useState<Strategy[]>(DEFAULT_STRATEGIES);
+  const [editingStrategy, setEditingStrategy] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState({ email: true, telegram: false, sound: true });
+  const [trailingStop, setTrailingStop] = useState(false);
+  const [paperMode, setPaperMode] = useState(false);
+
+  const currentStrategy = strategies.find((s) => s.id === activeStrategy)!;
+
+  const updateParam = (stratId: string, key: string, val: string) => {
+    setStrategies((prev) =>
+      prev.map((s) => s.id === stratId ? { ...s, params: { ...s.params, [key]: val } } : s)
+    );
+  };
+
   return (
-    <div className="space-y-4 animate-fade-in max-w-2xl">
-      <div className="panel p-5 space-y-4">
-        <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-2">Bot Configuration</div>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-mono-trade text-foreground">Auto Trading</div>
-            <div className="text-xs text-muted-foreground mt-0.5">Enable automated order execution</div>
-          </div>
-          <button onClick={() => setBotEnabled(!botEnabled)} className={`w-10 h-5 rounded-full relative transition-colors ${botEnabled ? "bg-green" : "bg-secondary"}`}>
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${botEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
-          </button>
-        </div>
-        <div className="border-t border-border pt-4 grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Risk Per Trade (%)</label>
-            <input value={riskPct} onChange={(e) => setRiskPct(e.target.value)} className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none focus:border-green/50" />
-          </div>
-          <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Max Open Positions</label>
-            <input value={maxPos} onChange={(e) => setMaxPos(e.target.value)} className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none focus:border-green/50" />
-          </div>
-          <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Default Exchange</label>
-            <select className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none">
-              <option>Binance</option><option>Bybit</option><option>OKX</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Default Pair</label>
-            <select className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none">
-              {PAIRS.map((p) => <option key={p}>{p}</option>)}
-            </select>
-          </div>
-        </div>
-      </div>
-      <div className="panel p-5">
-        <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-4">API Keys</div>
-        <div className="space-y-3">
-          {["Binance", "Bybit"].map((ex) => (
-            <div key={ex} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+    <div className="space-y-4 animate-fade-in">
+      <div className="grid grid-cols-3 gap-4">
+        {/* Left column: Bot control + Risk */}
+        <div className="space-y-4">
+          <div className="panel p-5 space-y-4">
+            <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Bot Control</div>
+            <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-mono-trade text-foreground">{ex}</div>
-                <div className="text-xs text-muted-foreground font-mono-trade">••••••••••••••••••••••••</div>
+                <div className="text-sm font-mono-trade text-foreground">Auto Trading</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Live order execution</div>
               </div>
-              <div className="flex gap-2">
-                <span className="text-[10px] px-2 py-0.5 rounded bg-green/10 text-green font-mono-trade">Connected</span>
-                <button className="text-xs text-muted-foreground hover:text-foreground font-mono-trade border border-border px-2 py-0.5 rounded">Edit</button>
+              <Toggle value={botEnabled} onChange={setBotEnabled} />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-mono-trade text-foreground">Paper Mode</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Simulate without real funds</div>
+              </div>
+              <Toggle value={paperMode} onChange={setPaperMode} />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-mono-trade text-foreground">Trailing Stop</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Dynamic stop loss adjustment</div>
+              </div>
+              <Toggle value={trailingStop} onChange={setTrailingStop} />
+            </div>
+          </div>
+
+          <div className="panel p-5 space-y-3">
+            <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Risk Management</div>
+            {[
+              { label: "Risk Per Trade (%)", value: riskPct, set: setRiskPct },
+              { label: "Max Open Positions", value: maxPos, set: setMaxPos },
+              { label: "Stop Loss (%)", value: stopLoss, set: setStopLoss },
+              { label: "Take Profit (%)", value: takeProfit, set: setTakeProfit },
+            ].map((f) => (
+              <div key={f.label}>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">{f.label}</label>
+                <input
+                  value={f.value}
+                  onChange={(e) => f.set(e.target.value)}
+                  className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none focus:border-green/50"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="panel p-5 space-y-3">
+            <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Notifications</div>
+            {[
+              { label: "Email Alerts", key: "email" as const },
+              { label: "Telegram Bot", key: "telegram" as const },
+              { label: "Sound Alerts", key: "sound" as const },
+            ].map((n) => (
+              <div key={n.key} className="flex items-center justify-between">
+                <span className="text-sm font-mono-trade text-foreground">{n.label}</span>
+                <Toggle value={notifications[n.key]} onChange={(v) => setNotifications((prev) => ({ ...prev, [n.key]: v }))} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Center + Right: Strategy editor */}
+        <div className="col-span-2 space-y-4">
+          <div className="panel p-0">
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <span className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Trading Strategy</span>
+              <div className={`flex items-center gap-1.5 text-xs font-mono-trade ${botEnabled ? "text-green" : "text-muted-foreground"}`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${botEnabled ? "bg-green animate-pulse" : "bg-muted-foreground"}`} />
+                {botEnabled ? "RUNNING" : "STOPPED"}
               </div>
             </div>
-          ))}
+
+            {/* Strategy selector tabs */}
+            <div className="flex border-b border-border">
+              {strategies.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => { setActiveStrategy(s.id); setEditingStrategy(null); }}
+                  className={`px-4 py-2.5 text-xs font-mono-trade transition-colors border-b-2 -mb-px ${
+                    activeStrategy === s.id
+                      ? "border-green text-green"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Strategy description + active indicator */}
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <p className="text-xs text-muted-foreground font-mono-trade">{currentStrategy.description}</p>
+              <button
+                onClick={() => setEditingStrategy(editingStrategy === activeStrategy ? null : activeStrategy)}
+                className="text-xs font-mono-trade text-green border border-green/30 px-3 py-1 rounded hover:bg-green/10 transition-colors flex items-center gap-1.5"
+              >
+                <Icon name={editingStrategy === activeStrategy ? "Check" : "Edit2"} size={11} />
+                {editingStrategy === activeStrategy ? "Done" : "Edit Parameters"}
+              </button>
+            </div>
+
+            {/* Parameters */}
+            <div className="p-5">
+              <div className="grid grid-cols-2 gap-4">
+                {Object.entries(currentStrategy.params).map(([key, val]) => {
+                  const label = key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
+                  return (
+                    <div key={key}>
+                      <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">{label}</label>
+                      <input
+                        value={val}
+                        disabled={editingStrategy !== activeStrategy}
+                        onChange={(e) => updateParam(activeStrategy, key, e.target.value)}
+                        className={`w-full bg-secondary border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none transition-colors ${
+                          editingStrategy === activeStrategy
+                            ? "border-green/50 focus:border-green"
+                            : "border-border opacity-60 cursor-not-allowed"
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {editingStrategy === activeStrategy && (
+                <div className="mt-4 pt-4 border-t border-border flex gap-2">
+                  <button
+                    onClick={() => setEditingStrategy(null)}
+                    className="px-4 py-2 text-xs font-mono-trade bg-green text-black rounded font-bold hover:opacity-90 transition-opacity"
+                  >
+                    Save & Apply
+                  </button>
+                  <button
+                    onClick={() => { setStrategies(DEFAULT_STRATEGIES); setEditingStrategy(null); }}
+                    className="px-4 py-2 text-xs font-mono-trade border border-border text-muted-foreground rounded hover:text-foreground transition-colors"
+                  >
+                    Reset to Default
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Strategy preview card */}
+          <div className="panel p-5">
+            <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-3">Active Strategy Summary</div>
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: "Strategy", value: currentStrategy.name },
+                { label: "Risk/Trade", value: `${riskPct}%` },
+                { label: "Stop Loss", value: `${stopLoss}%` },
+                { label: "Take Profit", value: `${takeProfit}%` },
+              ].map((s) => (
+                <div key={s.label} className="bg-secondary rounded p-3">
+                  <div className="text-[10px] text-muted-foreground font-mono-trade uppercase tracking-wider mb-1">{s.label}</div>
+                  <div className="text-sm font-mono-trade font-semibold text-foreground">{s.value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <div className={`text-[10px] px-2 py-0.5 rounded font-mono-trade font-semibold ${botEnabled ? "bg-green/10 text-green" : "bg-muted text-muted-foreground"}`}>
+                {botEnabled ? (paperMode ? "● PAPER TRADING" : "● LIVE TRADING") : "○ STOPPED"}
+              </div>
+              {trailingStop && <div className="text-[10px] px-2 py-0.5 rounded font-mono-trade bg-blue-500/10 text-blue-400">TRAILING STOP ON</div>}
+              {paperMode && <div className="text-[10px] px-2 py-0.5 rounded font-mono-trade bg-yellow-500/10 text-yellow-400">PAPER MODE</div>}
+            </div>
+          </div>
+
+          {/* API Keys */}
+          <div className="panel p-5">
+            <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-4">Exchange Connections</div>
+            <div className="space-y-2">
+              {["Binance", "Bybit"].map((ex) => (
+                <div key={ex} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                  <div>
+                    <div className="text-sm font-mono-trade text-foreground">{ex}</div>
+                    <div className="text-xs text-muted-foreground font-mono-trade">••••••••••••••••••••••••</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-green/10 text-green font-mono-trade">Connected</span>
+                    <button className="text-xs text-muted-foreground hover:text-foreground font-mono-trade border border-border px-2 py-0.5 rounded transition-colors">Edit</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button className="mt-3 text-xs text-green font-mono-trade border border-green/30 px-3 py-1.5 rounded hover:bg-green/10 transition-colors flex items-center gap-1">
+              <Icon name="Plus" size={12} /> Add Exchange
+            </button>
+          </div>
         </div>
-        <button className="mt-3 text-xs text-green font-mono-trade border border-green/30 px-3 py-1.5 rounded hover:bg-green/10 transition-colors flex items-center gap-1">
-          <Icon name="Plus" size={12} /> Add Exchange
-        </button>
       </div>
     </div>
   );
