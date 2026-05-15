@@ -967,6 +967,40 @@ function BotSetup() {
   const [reentryCooldown, setReentryCooldown] = useState("5");
   const [paperMode, setPaperMode] = useState(true);
   const [direction, setDirection] = useState<"long" | "short" | "both">("long");
+  const [activeSection, setActiveSection] = useState<"general" | "behavior" | "risk" | "schedule">("general");
+
+  // Bot Behavior state
+  const [entryMode, setEntryMode] = useState<"signal" | "indicator" | "hybrid">("signal");
+  const [rsiEnabled, setRsiEnabled] = useState(true);
+  const [rsiPeriod, setRsiPeriod] = useState("14");
+  const [rsiOversold, setRsiOversold] = useState("30");
+  const [rsiOverbought, setRsiOverbought] = useState("70");
+  const [macdEnabled, setMacdEnabled] = useState(false);
+  const [macdFast, setMacdFast] = useState("12");
+  const [macdSlow, setMacdSlow] = useState("26");
+  const [macdSignal, setMacdSignal] = useState("9");
+  const [emaEnabled, setEmaEnabled] = useState(true);
+  const [emaPeriod, setEmaPeriod] = useState("200");
+  const [emaFilter, setEmaFilter] = useState<"above" | "below" | "both">("above");
+  const [bbEnabled, setBbEnabled] = useState(false);
+  const [bbPeriod, setBbPeriod] = useState("20");
+  const [bbStdDev, setBbStdDev] = useState("2");
+  const [exitMode, setExitMode] = useState<"tp_sl" | "indicator" | "hybrid">("tp_sl");
+  const [exitRsiEnabled, setExitRsiEnabled] = useState(false);
+  const [exitRsiLevel, setExitRsiLevel] = useState("65");
+  const [partialTpEnabled, setPartialTpEnabled] = useState(false);
+  const [partialTpPct, setPartialTpPct] = useState("50");
+  const [partialTpAt, setPartialTpAt] = useState("2");
+  const [volumeFilterEnabled, setVolumeFilterEnabled] = useState(false);
+  const [volumeMinMult, setVolumeMinMult] = useState("1.5");
+  const [trendFilterEnabled, setTrendFilterEnabled] = useState(false);
+  const [trendFilterTf, setTrendFilterTf] = useState("4h");
+  const [sessionFilterEnabled, setSessionFilterEnabled] = useState(false);
+  const [sessions, setSessions] = useState(["London", "New York"]);
+  const [scheduleType, setScheduleType] = useState<"always" | "custom">("always");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("17:00");
+  const [tradingDays, setTradingDays] = useState(["Mon","Tue","Wed","Thu","Fri"]);
 
   const testConnection = () => {
     setTestStatus("testing");
@@ -1062,6 +1096,16 @@ function BotSetup() {
     );
   }
 
+  const toggleDay = (d: string) => setTradingDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+  const toggleSession = (s: string) => setSessions(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+
+  const SECTIONS = [
+    { id: "general", label: "General", icon: "Settings2" },
+    { id: "behavior", label: "Bot Behavior", icon: "Cpu" },
+    { id: "risk", label: "Risk", icon: "ShieldAlert" },
+    { id: "schedule", label: "Schedule", icon: "Clock" },
+  ] as const;
+
   return (
     <div className="animate-fade-in space-y-4">
 
@@ -1069,250 +1113,518 @@ function BotSetup() {
       <div className="flex items-center justify-between">
         <div>
           <div className="text-sm font-mono-trade font-bold text-foreground">Bot Configuration</div>
-          <div className="text-[10px] text-muted-foreground font-mono-trade mt-0.5">All settings are editable inline — changes take effect on next Save.</div>
+          <div className="text-[10px] text-muted-foreground font-mono-trade mt-0.5">All settings are editable inline — changes apply on Save.</div>
         </div>
         <div className="flex items-center gap-2">
           <div className={`text-[10px] px-2 py-1 rounded font-mono-trade font-semibold ${paperMode ? "bg-yellow-500/10 text-yellow-400" : "bg-green/10 text-green"}`}>
             {paperMode ? "● PAPER MODE" : "● LIVE"}
           </div>
-          <button
-            onClick={() => setSaved(true)}
-            className="flex items-center gap-1.5 text-xs font-mono-trade bg-green text-black font-bold px-4 py-2 rounded hover:opacity-90 transition-opacity"
-          >
+          <button onClick={() => setSaved(true)} className="flex items-center gap-1.5 text-xs font-mono-trade bg-green text-black font-bold px-4 py-2 rounded hover:opacity-90 transition-opacity">
             <Icon name="Save" size={12} /> Save & Apply
           </button>
         </div>
       </div>
 
-      {/* Row 1: Exchange + Market */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Exchange */}
-        <div className="panel p-4">
-          <SectionTitle title="Exchange" />
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            {["Binance", "Bybit", "OKX", "Kraken"].map((ex) => (
-              <button key={ex} onClick={() => { setExchange(ex); setTestStatus("idle"); }}
-                className={`py-2 text-xs font-mono-trade rounded border transition-colors ${exchange === ex ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                {ex}
-              </button>
-            ))}
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className={lbl}>API Key</label>
-              <input value={apiKey} onChange={(e) => { setApiKey(e.target.value); setTestStatus("idle"); }} placeholder="Paste API key" className={inp} />
-            </div>
-            <div>
-              <label className={lbl}>API Secret</label>
-              <div className="relative">
-                <input type={showSecret ? "text" : "password"} value={apiSecret}
-                  onChange={(e) => { setApiSecret(e.target.value); setTestStatus("idle"); }}
-                  placeholder="Paste API secret" className={inp + " pr-9"} />
-                <button onClick={() => setShowSecret(!showSecret)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  <Icon name={showSecret ? "EyeOff" : "Eye"} size={13} />
-                </button>
-              </div>
-            </div>
-            <button onClick={testConnection} disabled={!apiKey || testStatus === "testing"}
-              className="w-full py-2 text-xs font-mono-trade border border-border rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
-              {testStatus === "testing" && <Icon name="Loader" size={11} className="animate-spin" />}
-              {testStatus === "testing" ? "Testing…" : "Test Connection"}
-            </button>
-            {testStatus === "ok" && <div className="flex items-center gap-1.5 text-xs font-mono-trade text-green"><Icon name="CheckCircle" size={12} /> Connected</div>}
-            {testStatus === "fail" && <div className="flex items-center gap-1.5 text-xs font-mono-trade text-red"><Icon name="XCircle" size={12} /> Failed — check keys</div>}
-          </div>
-        </div>
+      {/* Section tabs */}
+      <div className="flex gap-1 border-b border-border pb-0">
+        {SECTIONS.map((s) => (
+          <button key={s.id} onClick={() => setActiveSection(s.id)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-mono-trade border-b-2 transition-colors -mb-px ${
+              activeSection === s.id ? "border-green text-green" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}>
+            <Icon name={s.icon} size={12} />{s.label}
+          </button>
+        ))}
+      </div>
 
-        {/* Market */}
-        <div className="panel p-4">
-          <SectionTitle title="Market" />
-          <div className="space-y-3">
-            <div>
-              <label className={lbl}>Trading Pair</label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {PAIRS.map((p) => (
-                  <button key={p} onClick={() => setPair(p)}
-                    className={`py-1.5 text-xs font-mono-trade rounded border transition-colors ${pair === p ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                    {p}
+      {/* ── GENERAL ── */}
+      {activeSection === "general" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="panel p-4">
+              <SectionTitle title="Exchange" />
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {["Binance", "Bybit", "OKX", "Kraken"].map((ex) => (
+                  <button key={ex} onClick={() => { setExchange(ex); setTestStatus("idle"); }}
+                    className={`py-2 text-xs font-mono-trade rounded border transition-colors ${exchange === ex ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                    {ex}
                   </button>
                 ))}
               </div>
-            </div>
-            <div>
-              <label className={lbl}>Timeframe</label>
-              <div className="grid grid-cols-5 gap-1.5">
-                {["1m","5m","15m","1h","4h"].map((tf) => (
-                  <button key={tf} onClick={() => setTimeframe(tf)}
-                    className={`py-1.5 text-xs font-mono-trade rounded border transition-colors ${timeframe === tf ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                    {tf}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className={lbl}>Capital</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input value={capital} onChange={(e) => setCapital(e.target.value)} className={inp + " pr-14"} placeholder="1000" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-trade text-muted-foreground">{capitalPct ? "%" : "USDT"}</span>
+              <div className="space-y-3">
+                <div>
+                  <label className={lbl}>API Key</label>
+                  <input value={apiKey} onChange={(e) => { setApiKey(e.target.value); setTestStatus("idle"); }} placeholder="Paste API key" className={inp} />
                 </div>
-                <button onClick={() => setCapitalPct(!capitalPct)}
-                  className={`px-3 text-xs font-mono-trade border rounded transition-colors ${capitalPct ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                  %
+                <div>
+                  <label className={lbl}>API Secret</label>
+                  <div className="relative">
+                    <input type={showSecret ? "text" : "password"} value={apiSecret}
+                      onChange={(e) => { setApiSecret(e.target.value); setTestStatus("idle"); }}
+                      placeholder="Paste API secret" className={inp + " pr-9"} />
+                    <button onClick={() => setShowSecret(!showSecret)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <Icon name={showSecret ? "EyeOff" : "Eye"} size={13} />
+                    </button>
+                  </div>
+                </div>
+                <button onClick={testConnection} disabled={!apiKey || testStatus === "testing"}
+                  className="w-full py-2 text-xs font-mono-trade border border-border rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+                  {testStatus === "testing" && <Icon name="Loader" size={11} className="animate-spin" />}
+                  {testStatus === "testing" ? "Testing…" : "Test Connection"}
                 </button>
+                {testStatus === "ok" && <div className="flex items-center gap-1.5 text-xs font-mono-trade text-green"><Icon name="CheckCircle" size={12} /> Connected</div>}
+                {testStatus === "fail" && <div className="flex items-center gap-1.5 text-xs font-mono-trade text-red"><Icon name="XCircle" size={12} /> Failed — check keys</div>}
               </div>
             </div>
-            <div>
-              <label className={lbl}>Direction</label>
+            <div className="panel p-4">
+              <SectionTitle title="Market" />
+              <div className="space-y-3">
+                <div>
+                  <label className={lbl}>Trading Pair</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {PAIRS.map((p) => (
+                      <button key={p} onClick={() => setPair(p)}
+                        className={`py-1.5 text-xs font-mono-trade rounded border transition-colors ${pair === p ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className={lbl}>Timeframe</label>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {["1m","5m","15m","1h","4h"].map((tf) => (
+                      <button key={tf} onClick={() => setTimeframe(tf)}
+                        className={`py-1.5 text-xs font-mono-trade rounded border transition-colors ${timeframe === tf ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                        {tf}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className={lbl}>Capital</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input value={capital} onChange={(e) => setCapital(e.target.value)} className={inp + " pr-14"} placeholder="1000" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-trade text-muted-foreground">{capitalPct ? "%" : "USDT"}</span>
+                    </div>
+                    <button onClick={() => setCapitalPct(!capitalPct)}
+                      className={`px-3 text-xs font-mono-trade border rounded transition-colors ${capitalPct ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                      %
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className={lbl}>Direction</label>
+                  <div className="flex gap-2">
+                    {(["long","short","both"] as const).map((d) => (
+                      <button key={d} onClick={() => setDirection(d)}
+                        className={`flex-1 py-1.5 text-xs font-mono-trade rounded border capitalize transition-colors ${direction === d ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── BOT BEHAVIOR ── */}
+      {activeSection === "behavior" && (
+        <div className="space-y-4">
+
+          {/* Entry Mode */}
+          <div className="panel p-4">
+            <SectionTitle title="Entry Rules" sub="Define when the bot opens a position" />
+            <div className="mb-4">
+              <label className={lbl}>Entry Mode</label>
               <div className="flex gap-2">
-                {(["long","short","both"] as const).map((d) => (
-                  <button key={d} onClick={() => setDirection(d)}
-                    className={`flex-1 py-1.5 text-xs font-mono-trade rounded border capitalize transition-colors ${direction === d ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                    {d}
+                {([
+                  { id: "signal", label: "Candle Signal", desc: "Enter on pattern match" },
+                  { id: "indicator", label: "Indicator Only", desc: "Enter on RSI / MACD / EMA" },
+                  { id: "hybrid", label: "Hybrid", desc: "Signal + indicator confirmation" },
+                ] as const).map((m) => (
+                  <button key={m.id} onClick={() => setEntryMode(m.id)}
+                    className={`flex-1 p-3 rounded border text-left transition-colors ${entryMode === m.id ? "border-green bg-green/[0.06]" : "border-border hover:bg-white/[0.02]"}`}>
+                    <div className={`text-xs font-mono-trade font-semibold mb-0.5 ${entryMode === m.id ? "text-green" : "text-foreground"}`}>{m.label}</div>
+                    <div className="text-[10px] font-mono-trade text-muted-foreground">{m.desc}</div>
                   </button>
                 ))}
               </div>
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Row 2: Candle Signal Setup */}
-      <div className="panel p-4">
-        <div className="flex items-center justify-between mb-4">
-          <SectionTitle title="Candle Signal Setup" sub="Bot enters a trade when the selected pattern(s) are detected" />
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-[10px] font-mono-trade text-muted-foreground">Logic:</span>
-            {(["AND","OR"] as const).map((l) => (
-              <button key={l} onClick={() => setSignalLogic(l)}
-                className={`px-3 py-1 text-xs font-mono-trade rounded border transition-colors ${signalLogic === l ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                {l}
-              </button>
-            ))}
-            <div className="ml-3">
-              <label className={lbl + " mb-0 inline mr-2"}>Lookback candles</label>
-              <input value={signalLookback} onChange={(e) => setSignalLookback(e.target.value)}
-                className="w-14 bg-secondary border border-border rounded px-2 py-1 text-xs font-mono-trade text-foreground focus:outline-none focus:border-green/50" />
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-4">
-          <CandleSlot label="Signal A — Primary" value={candleA} onChange={setCandleA} />
-          <div className="flex flex-col items-center justify-center gap-1 shrink-0">
-            <div className="w-px h-full bg-border" />
-            <div className={`text-xs font-mono-trade font-bold px-2 py-1 rounded border ${signalLogic === "AND" ? "border-green/40 text-green bg-green/10" : "border-yellow-500/40 text-yellow-400 bg-yellow-500/10"}`}>{signalLogic}</div>
-            <div className="w-px h-full bg-border" />
-          </div>
-          <CandleSlot label="Signal B — Confirmation" value={candleB} onChange={setCandleB} />
-        </div>
-        <div className="mt-3 p-3 bg-secondary/50 rounded flex items-center gap-2 text-[10px] font-mono-trade text-muted-foreground">
-          <Icon name="Info" size={11} />
-          Bot will enter when <span className="text-foreground mx-1">{CANDLE_PATTERNS.find(p=>p.id===candleA)?.label}</span>
-          <span className="text-green font-semibold">{signalLogic}</span>
-          <span className="text-foreground mx-1">{CANDLE_PATTERNS.find(p=>p.id===candleB)?.label}</span>
-          detected within last <span className="text-foreground mx-1">{signalLookback}</span> candles on <span className="text-foreground ml-1">{pair} · {timeframe}</span>
-        </div>
-      </div>
+            {(entryMode === "signal" || entryMode === "hybrid") && (
+              <div className="mb-4 p-3 bg-secondary/40 rounded space-y-3">
+                <div className="text-[10px] font-mono-trade text-muted-foreground uppercase tracking-widest">Candle Signals</div>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className={lbl}>Pattern A (Primary)</label>
+                    <select value={candleA} onChange={(e) => setCandleA(e.target.value)} className={inp}>
+                      {CANDLE_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col items-center justify-end pb-2 gap-1">
+                    {(["AND","OR"] as const).map(l => (
+                      <button key={l} onClick={() => setSignalLogic(l)}
+                        className={`px-2 py-0.5 text-[10px] font-mono-trade rounded border transition-colors ${signalLogic === l ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground"}`}>{l}</button>
+                    ))}
+                  </div>
+                  <div className="flex-1">
+                    <label className={lbl}>Pattern B (Confirmation)</label>
+                    <select value={candleB} onChange={(e) => setCandleB(e.target.value)} className={inp}>
+                      {CANDLE_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="w-24">
+                    <label className={lbl}>Lookback</label>
+                    <input value={signalLookback} onChange={(e) => setSignalLookback(e.target.value)} className={inp} />
+                  </div>
+                </div>
+              </div>
+            )}
 
-      {/* Row 3: Bot Behavior */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Order Execution */}
-        <div className="panel p-4">
-          <SectionTitle title="Order Execution" />
-          <div className="space-y-3">
-            <div>
-              <label className={lbl}>Order Type</label>
+            {(entryMode === "indicator" || entryMode === "hybrid") && (
+              <div className="space-y-3">
+                {/* RSI */}
+                <div className={`rounded border p-3 transition-colors ${rsiEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-xs font-mono-trade font-semibold text-foreground">RSI</div>
+                      <div className="text-[10px] text-muted-foreground font-mono-trade">Relative Strength Index</div>
+                    </div>
+                    <Toggle on={rsiEnabled} onToggle={() => setRsiEnabled(!rsiEnabled)} />
+                  </div>
+                  {rsiEnabled && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div><label className={lbl}>Period</label><input value={rsiPeriod} onChange={e => setRsiPeriod(e.target.value)} className={inp} /></div>
+                      <div><label className={lbl}>Oversold (Buy)</label><input value={rsiOversold} onChange={e => setRsiOversold(e.target.value)} className={inp} /></div>
+                      <div><label className={lbl}>Overbought (Sell)</label><input value={rsiOverbought} onChange={e => setRsiOverbought(e.target.value)} className={inp} /></div>
+                    </div>
+                  )}
+                </div>
+
+                {/* MACD */}
+                <div className={`rounded border p-3 transition-colors ${macdEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-xs font-mono-trade font-semibold text-foreground">MACD</div>
+                      <div className="text-[10px] text-muted-foreground font-mono-trade">Enter on bullish/bearish crossover</div>
+                    </div>
+                    <Toggle on={macdEnabled} onToggle={() => setMacdEnabled(!macdEnabled)} />
+                  </div>
+                  {macdEnabled && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div><label className={lbl}>Fast</label><input value={macdFast} onChange={e => setMacdFast(e.target.value)} className={inp} /></div>
+                      <div><label className={lbl}>Slow</label><input value={macdSlow} onChange={e => setMacdSlow(e.target.value)} className={inp} /></div>
+                      <div><label className={lbl}>Signal</label><input value={macdSignal} onChange={e => setMacdSignal(e.target.value)} className={inp} /></div>
+                    </div>
+                  )}
+                </div>
+
+                {/* EMA Filter */}
+                <div className={`rounded border p-3 transition-colors ${emaEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-xs font-mono-trade font-semibold text-foreground">EMA Filter</div>
+                      <div className="text-[10px] text-muted-foreground font-mono-trade">Only trade when price is above/below EMA</div>
+                    </div>
+                    <Toggle on={emaEnabled} onToggle={() => setEmaEnabled(!emaEnabled)} />
+                  </div>
+                  {emaEnabled && (
+                    <div className="flex gap-3">
+                      <div className="w-28"><label className={lbl}>Period</label><input value={emaPeriod} onChange={e => setEmaPeriod(e.target.value)} className={inp} /></div>
+                      <div className="flex-1">
+                        <label className={lbl}>Price Must Be</label>
+                        <div className="flex gap-2">
+                          {(["above","below","both"] as const).map(f => (
+                            <button key={f} onClick={() => setEmaFilter(f)}
+                              className={`flex-1 py-2 text-xs font-mono-trade rounded border capitalize transition-colors ${emaFilter === f ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>{f} EMA</button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bollinger Bands */}
+                <div className={`rounded border p-3 transition-colors ${bbEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-xs font-mono-trade font-semibold text-foreground">Bollinger Bands</div>
+                      <div className="text-[10px] text-muted-foreground font-mono-trade">Enter on band touch/breakout</div>
+                    </div>
+                    <Toggle on={bbEnabled} onToggle={() => setBbEnabled(!bbEnabled)} />
+                  </div>
+                  {bbEnabled && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><label className={lbl}>Period</label><input value={bbPeriod} onChange={e => setBbPeriod(e.target.value)} className={inp} /></div>
+                      <div><label className={lbl}>Std Dev</label><input value={bbStdDev} onChange={e => setBbStdDev(e.target.value)} className={inp} /></div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Exit Rules */}
+          <div className="panel p-4">
+            <SectionTitle title="Exit Rules" sub="Define when the bot closes a position" />
+            <div className="mb-4">
+              <label className={lbl}>Exit Mode</label>
               <div className="flex gap-2">
-                {(["market","limit"] as const).map((t) => (
-                  <button key={t} onClick={() => setOrderType(t)}
-                    className={`flex-1 py-2 text-xs font-mono-trade rounded border capitalize transition-colors ${orderType === t ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                    {t}
+                {([
+                  { id: "tp_sl", label: "TP / SL Only" },
+                  { id: "indicator", label: "Indicator Exit" },
+                  { id: "hybrid", label: "Hybrid" },
+                ] as const).map((m) => (
+                  <button key={m.id} onClick={() => setExitMode(m.id)}
+                    className={`flex-1 py-2 text-xs font-mono-trade rounded border transition-colors ${exitMode === m.id ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                    {m.label}
                   </button>
                 ))}
               </div>
             </div>
-            {orderType === "limit" && (
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
-                <label className={lbl}>Limit Offset (%)</label>
-                <input value={limitOffset} onChange={(e) => setLimitOffset(e.target.value)} className={inp} placeholder="0.1" />
-                <p className="text-[10px] text-muted-foreground font-mono-trade mt-1">Place limit order this % below market price</p>
+                <label className={lbl}>Take Profit (%)</label>
+                <div className="relative"><input value={takeProfit} onChange={e => setTakeProfit(e.target.value)} className={inp + " pr-6"} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-trade text-muted-foreground">%</span></div>
               </div>
-            )}
-            <div>
-              <label className={lbl}>Position Size (USDT)</label>
-              <input value={positionSize} onChange={(e) => setPositionSize(e.target.value)} className={inp} />
-            </div>
-            <div>
-              <label className={lbl}>Max Open Trades</label>
-              <input value={maxOpenTrades} onChange={(e) => setMaxOpenTrades(e.target.value)} className={inp} />
-            </div>
-            <div className="flex items-center justify-between pt-2 border-t border-border">
               <div>
-                <div className="text-xs font-mono-trade text-foreground">Re-entry after close</div>
-                <div className="text-[10px] text-muted-foreground font-mono-trade">Allow re-entering same pair</div>
+                <label className={lbl}>Stop Loss (%)</label>
+                <div className="relative"><input value={stopLoss} onChange={e => setStopLoss(e.target.value)} className={inp + " pr-6"} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-trade text-muted-foreground">%</span></div>
               </div>
-              <Toggle on={reentryEnabled} onToggle={() => setReentryEnabled(!reentryEnabled)} />
             </div>
-            {reentryEnabled && (
-              <div>
-                <label className={lbl}>Re-entry Cooldown (min)</label>
-                <input value={reentryCooldown} onChange={(e) => setReentryCooldown(e.target.value)} className={inp} />
+
+            {/* Partial TP */}
+            <div className={`rounded border p-3 mb-3 transition-colors ${partialTpEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-xs font-mono-trade font-semibold text-foreground">Partial Take Profit</div>
+                  <div className="text-[10px] text-muted-foreground font-mono-trade">Close a portion of position early</div>
+                </div>
+                <Toggle on={partialTpEnabled} onToggle={() => setPartialTpEnabled(!partialTpEnabled)} />
+              </div>
+              {partialTpEnabled && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={lbl}>Close % at first target</label><input value={partialTpPct} onChange={e => setPartialTpPct(e.target.value)} className={inp} /></div>
+                  <div><label className={lbl}>First target (%)</label><input value={partialTpAt} onChange={e => setPartialTpAt(e.target.value)} className={inp} /></div>
+                </div>
+              )}
+            </div>
+
+            {/* Trailing Stop */}
+            <div className={`rounded border p-3 mb-3 transition-colors ${trailingStop ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-xs font-mono-trade font-semibold text-foreground">Trailing Stop Loss</div>
+                  <div className="text-[10px] text-muted-foreground font-mono-trade">Stop follows price upward automatically</div>
+                </div>
+                <Toggle on={trailingStop} onToggle={() => setTrailingStop(!trailingStop)} />
+              </div>
+              {trailingStop && (
+                <div><label className={lbl}>Trailing Distance (%)</label><input value={trailingPct} onChange={e => setTrailingPct(e.target.value)} className={inp} /></div>
+              )}
+            </div>
+
+            {/* RSI Exit */}
+            {(exitMode === "indicator" || exitMode === "hybrid") && (
+              <div className={`rounded border p-3 transition-colors ${exitRsiEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-xs font-mono-trade font-semibold text-foreground">RSI Exit Level</div>
+                    <div className="text-[10px] text-muted-foreground font-mono-trade">Exit when RSI reaches this level</div>
+                  </div>
+                  <Toggle on={exitRsiEnabled} onToggle={() => setExitRsiEnabled(!exitRsiEnabled)} />
+                </div>
+                {exitRsiEnabled && (
+                  <div><label className={lbl}>RSI Level</label><input value={exitRsiLevel} onChange={e => setExitRsiLevel(e.target.value)} className={inp} /></div>
+                )}
               </div>
             )}
           </div>
-        </div>
 
-        {/* Risk Management */}
-        <div className="panel p-4">
+          {/* Order Execution */}
+          <div className="panel p-4">
+            <SectionTitle title="Order Execution" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div>
+                  <label className={lbl}>Order Type</label>
+                  <div className="flex gap-2">
+                    {(["market","limit"] as const).map(t => (
+                      <button key={t} onClick={() => setOrderType(t)}
+                        className={`flex-1 py-2 text-xs font-mono-trade rounded border capitalize transition-colors ${orderType === t ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>{t}</button>
+                    ))}
+                  </div>
+                </div>
+                {orderType === "limit" && (
+                  <div>
+                    <label className={lbl}>Limit Offset (%)</label>
+                    <input value={limitOffset} onChange={e => setLimitOffset(e.target.value)} className={inp} />
+                    <p className="text-[10px] text-muted-foreground font-mono-trade mt-1">Below market price</p>
+                  </div>
+                )}
+                <div>
+                  <label className={lbl}>Position Size (USDT)</label>
+                  <input value={positionSize} onChange={e => setPositionSize(e.target.value)} className={inp} />
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className={lbl}>Max Open Trades</label>
+                  <input value={maxOpenTrades} onChange={e => setMaxOpenTrades(e.target.value)} className={inp} />
+                </div>
+                <div className={`rounded border p-3 transition-colors ${reentryEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <div className="text-xs font-mono-trade text-foreground">Re-entry</div>
+                      <div className="text-[10px] text-muted-foreground font-mono-trade">Allow re-entering same pair</div>
+                    </div>
+                    <Toggle on={reentryEnabled} onToggle={() => setReentryEnabled(!reentryEnabled)} />
+                  </div>
+                  {reentryEnabled && (
+                    <div><label className={lbl}>Cooldown (min)</label><input value={reentryCooldown} onChange={e => setReentryCooldown(e.target.value)} className={inp} /></div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="panel p-4">
+            <SectionTitle title="Filters" sub="Extra conditions that must be met before the bot enters" />
+            <div className="space-y-3">
+
+              {/* Volume Filter */}
+              <div className={`rounded border p-3 transition-colors ${volumeFilterEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-xs font-mono-trade font-semibold text-foreground">Volume Spike Filter</div>
+                    <div className="text-[10px] text-muted-foreground font-mono-trade">Only enter when volume is unusually high</div>
+                  </div>
+                  <Toggle on={volumeFilterEnabled} onToggle={() => setVolumeFilterEnabled(!volumeFilterEnabled)} />
+                </div>
+                {volumeFilterEnabled && (
+                  <div className="w-40"><label className={lbl}>Min Volume Multiplier</label><input value={volumeMinMult} onChange={e => setVolumeMinMult(e.target.value)} className={inp} /></div>
+                )}
+              </div>
+
+              {/* Trend Filter */}
+              <div className={`rounded border p-3 transition-colors ${trendFilterEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-xs font-mono-trade font-semibold text-foreground">Higher Timeframe Trend Filter</div>
+                    <div className="text-[10px] text-muted-foreground font-mono-trade">Only trade in the direction of the higher TF trend</div>
+                  </div>
+                  <Toggle on={trendFilterEnabled} onToggle={() => setTrendFilterEnabled(!trendFilterEnabled)} />
+                </div>
+                {trendFilterEnabled && (
+                  <div>
+                    <label className={lbl}>Reference Timeframe</label>
+                    <div className="flex gap-2">
+                      {["1h","4h","1d"].map(tf => (
+                        <button key={tf} onClick={() => setTrendFilterTf(tf)}
+                          className={`px-4 py-2 text-xs font-mono-trade rounded border transition-colors ${trendFilterTf === tf ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>{tf}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Session Filter */}
+              <div className={`rounded border p-3 transition-colors ${sessionFilterEnabled ? "border-green/30 bg-green/[0.03]" : "border-border"}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-xs font-mono-trade font-semibold text-foreground">Trading Session Filter</div>
+                    <div className="text-[10px] text-muted-foreground font-mono-trade">Only trade during selected market sessions</div>
+                  </div>
+                  <Toggle on={sessionFilterEnabled} onToggle={() => setSessionFilterEnabled(!sessionFilterEnabled)} />
+                </div>
+                {sessionFilterEnabled && (
+                  <div className="flex gap-2 mt-2">
+                    {["London","New York","Tokyo","Sydney"].map(s => (
+                      <button key={s} onClick={() => toggleSession(s)}
+                        className={`px-3 py-1.5 text-xs font-mono-trade rounded border transition-colors ${sessions.includes(s) ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>{s}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── RISK ── */}
+      {activeSection === "risk" && (
+        <div className="panel p-4 space-y-4">
           <SectionTitle title="Risk Management" />
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={lbl}>Stop Loss (%)</label>
-              <div className="relative">
-                <input value={stopLoss} onChange={(e) => setStopLoss(e.target.value)} className={inp + " pr-6"} />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-trade text-muted-foreground">%</span>
-              </div>
+              <div className="relative"><input value={stopLoss} onChange={e => setStopLoss(e.target.value)} className={inp + " pr-6"} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-trade text-muted-foreground">%</span></div>
+              <p className="text-[10px] font-mono-trade text-muted-foreground mt-1">Close position if loss reaches this %</p>
             </div>
             <div>
               <label className={lbl}>Take Profit (%)</label>
-              <div className="relative">
-                <input value={takeProfit} onChange={(e) => setTakeProfit(e.target.value)} className={inp + " pr-6"} />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-trade text-muted-foreground">%</span>
-              </div>
+              <div className="relative"><input value={takeProfit} onChange={e => setTakeProfit(e.target.value)} className={inp + " pr-6"} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-trade text-muted-foreground">%</span></div>
+              <p className="text-[10px] font-mono-trade text-muted-foreground mt-1">Lock profit when target is reached</p>
             </div>
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <div>
-                <div className="text-xs font-mono-trade text-foreground">Trailing Stop Loss</div>
-                <div className="text-[10px] text-muted-foreground font-mono-trade">Follows price upward automatically</div>
-              </div>
-              <Toggle on={trailingStop} onToggle={() => setTrailingStop(!trailingStop)} />
-            </div>
-            {trailingStop && (
-              <div>
-                <label className={lbl}>Trailing Distance (%)</label>
-                <input value={trailingPct} onChange={(e) => setTrailingPct(e.target.value)} className={inp} />
-              </div>
-            )}
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <div>
-                <div className="text-xs font-mono-trade text-foreground">Paper Mode</div>
-                <div className="text-[10px] text-muted-foreground font-mono-trade">Simulate — no real orders placed</div>
-              </div>
-              <Toggle on={paperMode} onToggle={() => setPaperMode(!paperMode)} />
-            </div>
-            {!paperMode && (
-              <div className="bg-red/5 border border-red/20 rounded p-3 text-[10px] font-mono-trade text-red">
-                ⚠ LIVE — real funds will be used.
-              </div>
-            )}
-            {paperMode && (
-              <div className="bg-yellow-500/5 border border-yellow-500/20 rounded p-3 text-[10px] font-mono-trade text-yellow-400">
-                Paper mode ON — safe for testing.
-              </div>
-            )}
           </div>
+          <div className="flex items-center justify-between py-3 border-t border-border">
+            <div>
+              <div className="text-xs font-mono-trade text-foreground">Trailing Stop Loss</div>
+              <div className="text-[10px] text-muted-foreground font-mono-trade mt-0.5">Follows price upward automatically</div>
+            </div>
+            <Toggle on={trailingStop} onToggle={() => setTrailingStop(!trailingStop)} />
+          </div>
+          {trailingStop && <div><label className={lbl}>Trailing Distance (%)</label><input value={trailingPct} onChange={e => setTrailingPct(e.target.value)} className={inp} /></div>}
+          <div className="flex items-center justify-between py-3 border-t border-border">
+            <div>
+              <div className="text-xs font-mono-trade text-foreground">Paper Mode</div>
+              <div className="text-[10px] text-muted-foreground font-mono-trade mt-0.5">Simulate trades — no real orders placed</div>
+            </div>
+            <Toggle on={paperMode} onToggle={() => setPaperMode(!paperMode)} />
+          </div>
+          {!paperMode && <div className="bg-red/5 border border-red/20 rounded p-3 text-[10px] font-mono-trade text-red">⚠ LIVE MODE — real funds will be used.</div>}
+          {paperMode && <div className="bg-yellow-500/5 border border-yellow-500/20 rounded p-3 text-[10px] font-mono-trade text-yellow-400">Paper mode ON — safe for strategy testing.</div>}
         </div>
-      </div>
+      )}
+
+      {/* ── SCHEDULE ── */}
+      {activeSection === "schedule" && (
+        <div className="panel p-4 space-y-4">
+          <SectionTitle title="Trading Schedule" sub="Control when the bot is active" />
+          <div className="flex gap-2">
+            {(["always","custom"] as const).map(t => (
+              <button key={t} onClick={() => setScheduleType(t)}
+                className={`flex-1 py-2.5 text-xs font-mono-trade rounded border transition-colors ${scheduleType === t ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                {t === "always" ? "24/7 Always On" : "Custom Schedule"}
+              </button>
+            ))}
+          </div>
+          {scheduleType === "custom" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className={lbl}>Start Time (UTC)</label><input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className={inp} /></div>
+                <div><label className={lbl}>End Time (UTC)</label><input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className={inp} /></div>
+              </div>
+              <div>
+                <label className={lbl}>Active Days</label>
+                <div className="flex gap-2">
+                  {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d => (
+                    <button key={d} onClick={() => toggleDay(d)}
+                      className={`flex-1 py-1.5 text-xs font-mono-trade rounded border transition-colors ${tradingDays.includes(d) ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>{d}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {scheduleType === "always" && <div className="bg-secondary/50 rounded p-3 text-[10px] font-mono-trade text-muted-foreground">Bot trades 24/7 including weekends.</div>}
+        </div>
+      )}
 
       {/* Save bar */}
       <div className="flex items-center justify-between p-4 panel border-green/20">
@@ -1323,6 +1635,9 @@ function BotSetup() {
           <span className="px-2 py-0.5 rounded bg-secondary text-muted-foreground capitalize">{direction}</span>
           {trailingStop && <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400">Trailing Stop</span>}
           {paperMode && <span className="px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400">Paper</span>}
+          {rsiEnabled && <span className="px-2 py-0.5 rounded bg-secondary text-muted-foreground">RSI {rsiPeriod}</span>}
+          {macdEnabled && <span className="px-2 py-0.5 rounded bg-secondary text-muted-foreground">MACD</span>}
+          {emaEnabled && <span className="px-2 py-0.5 rounded bg-secondary text-muted-foreground">EMA {emaPeriod}</span>}
         </div>
         <button onClick={() => setSaved(true)}
           className="flex items-center gap-1.5 text-xs font-mono-trade bg-green text-black font-bold px-5 py-2 rounded hover:opacity-90 transition-opacity">
