@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { id: "alerts", label: "Alerts", icon: "Bell" },
   { id: "history", label: "History", icon: "History" },
   { id: "analytics", label: "Analytics", icon: "BarChart2" },
+  { id: "botsetup", label: "Bot Setup", icon: "Bot" },
   { id: "settings", label: "Settings", icon: "Settings" },
 ];
 
@@ -933,6 +934,457 @@ function Settings() {
   );
 }
 
+const SETUP_STEPS = ["Exchange", "Pair & Capital", "Strategy", "Risk", "Schedule", "Review"];
+
+function BotSetup() {
+  const [step, setStep] = useState(0);
+  const [saved, setSaved] = useState(false);
+
+  const [exchange, setExchange] = useState("Binance");
+  const [apiKey, setApiKey] = useState("");
+  const [apiSecret, setApiSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "fail">("idle");
+
+  const [pair, setPair] = useState("BTC/USDT");
+  const [capital, setCapital] = useState("1000");
+  const [capitalType, setCapitalType] = useState<"fixed" | "percent">("fixed");
+
+  const [strategy, setStrategy] = useState("grid");
+  const [stratParams, setStratParams] = useState<Record<string, string>>({
+    gridLevels: "10", gridSpacing: "0.5", upperBound: "70000", lowerBound: "60000",
+  });
+
+  const [stopLoss, setStopLoss] = useState("3");
+  const [takeProfit, setTakeProfit] = useState("6");
+  const [maxDrawdown, setMaxDrawdown] = useState("15");
+  const [trailingStop, setTrailingStop] = useState(false);
+  const [paperMode, setPaperMode] = useState(true);
+
+  const [scheduleType, setScheduleType] = useState<"always" | "schedule">("always");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("17:00");
+  const [tradingDays, setTradingDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri"]);
+
+  const STRATEGIES = [
+    { id: "grid", label: "Grid Trading", desc: "Buy low / sell high within a range. Best for sideways markets.", icon: "Grid" },
+    { id: "dca", label: "DCA", desc: "Invest fixed amounts at regular intervals, smoothing entry price.", icon: "TrendingDown" },
+    { id: "momentum", label: "Momentum", desc: "Follow breakouts using RSI + MACD signals.", icon: "TrendingUp" },
+    { id: "arb", label: "Arbitrage", desc: "Exploit price differences across exchanges.", icon: "ArrowLeftRight" },
+  ];
+
+  const STRATEGY_PARAMS: Record<string, { key: string; label: string; placeholder: string }[]> = {
+    grid: [
+      { key: "gridLevels", label: "Grid Levels", placeholder: "10" },
+      { key: "gridSpacing", label: "Spacing (%)", placeholder: "0.5" },
+      { key: "upperBound", label: "Upper Bound (USDT)", placeholder: "70000" },
+      { key: "lowerBound", label: "Lower Bound (USDT)", placeholder: "60000" },
+    ],
+    dca: [
+      { key: "interval", label: "Buy Interval", placeholder: "4h" },
+      { key: "buyAmount", label: "Buy Amount (USDT)", placeholder: "100" },
+      { key: "maxBuys", label: "Max Buys", placeholder: "20" },
+    ],
+    momentum: [
+      { key: "rsiPeriod", label: "RSI Period", placeholder: "14" },
+      { key: "rsiOverbought", label: "RSI Overbought", placeholder: "70" },
+      { key: "rsiOversold", label: "RSI Oversold", placeholder: "30" },
+      { key: "macdFast", label: "MACD Fast", placeholder: "12" },
+      { key: "macdSlow", label: "MACD Slow", placeholder: "26" },
+    ],
+    arb: [
+      { key: "minSpread", label: "Min Spread (%)", placeholder: "0.3" },
+      { key: "maxLatency", label: "Max Latency (ms)", placeholder: "100" },
+    ],
+  };
+
+  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const toggleDay = (d: string) =>
+    setTradingDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]);
+
+  const testConnection = () => {
+    setTestStatus("testing");
+    setTimeout(() => setTestStatus(apiKey.length > 4 ? "ok" : "fail"), 1800);
+  };
+
+  const inputCls = "w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none focus:border-green/50 transition-colors";
+  const labelCls = "text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1";
+
+  const canNext = () => {
+    if (step === 0) return exchange !== "";
+    if (step === 1) return pair !== "" && capital !== "";
+    return true;
+  };
+
+  if (saved) {
+    return (
+      <div className="animate-fade-in flex flex-col items-center justify-center py-20 space-y-4">
+        <div className="w-14 h-14 rounded-full bg-green/10 border border-green/30 flex items-center justify-center">
+          <Icon name="Check" size={28} className="text-green" />
+        </div>
+        <div className="text-lg font-mono-trade font-bold text-foreground">Bot Configured!</div>
+        <div className="text-xs font-mono-trade text-muted-foreground text-center max-w-sm">
+          Your bot is set up and {paperMode ? "running in paper mode" : "ready to go live"}.<br />
+          You can monitor it from the Dashboard.
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={() => { setSaved(false); setStep(0); }}
+            className="text-xs font-mono-trade border border-border text-muted-foreground px-4 py-2 rounded hover:text-foreground transition-colors"
+          >
+            Edit Setup
+          </button>
+          <button
+            className="text-xs font-mono-trade bg-green text-black font-bold px-4 py-2 rounded hover:opacity-90 transition-opacity"
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="animate-fade-in max-w-3xl mx-auto space-y-5">
+      {/* Step indicator */}
+      <div className="flex items-center gap-0">
+        {SETUP_STEPS.map((s, i) => (
+          <div key={s} className="flex items-center flex-1 last:flex-none">
+            <button
+              onClick={() => i < step && setStep(i)}
+              className="flex flex-col items-center gap-1 group"
+            >
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono-trade font-bold transition-all ${
+                i < step ? "bg-green text-black" :
+                i === step ? "bg-green/10 border border-green text-green" :
+                "bg-secondary text-muted-foreground"
+              }`}>
+                {i < step ? <Icon name="Check" size={12} /> : i + 1}
+              </div>
+              <span className={`text-[10px] font-mono-trade whitespace-nowrap ${i === step ? "text-green" : "text-muted-foreground"}`}>{s}</span>
+            </button>
+            {i < SETUP_STEPS.length - 1 && (
+              <div className={`flex-1 h-px mx-2 mb-4 ${i < step ? "bg-green/40" : "bg-border"}`} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Step content */}
+      <div className="panel p-6">
+        {/* STEP 0: Exchange */}
+        {step === 0 && (
+          <div className="space-y-5">
+            <div>
+              <div className="text-sm font-mono-trade font-semibold text-foreground mb-0.5">Connect Exchange</div>
+              <div className="text-xs text-muted-foreground font-mono-trade">Enter your API credentials to allow the bot to trade on your behalf.</div>
+            </div>
+            <div>
+              <label className={labelCls}>Exchange</label>
+              <div className="flex gap-2">
+                {["Binance", "Bybit", "OKX", "Kraken"].map((ex) => (
+                  <button
+                    key={ex}
+                    onClick={() => { setExchange(ex); setTestStatus("idle"); }}
+                    className={`flex-1 py-2 text-xs font-mono-trade rounded border transition-colors ${
+                      exchange === ex ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >{ex}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>API Key</label>
+              <input value={apiKey} onChange={(e) => { setApiKey(e.target.value); setTestStatus("idle"); }} placeholder="Paste your API key here" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>API Secret</label>
+              <div className="relative">
+                <input
+                  type={showSecret ? "text" : "password"}
+                  value={apiSecret}
+                  onChange={(e) => { setApiSecret(e.target.value); setTestStatus("idle"); }}
+                  placeholder="Paste your API secret here"
+                  className={inputCls + " pr-10"}
+                />
+                <button onClick={() => setShowSecret(!showSecret)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <Icon name={showSecret ? "EyeOff" : "Eye"} size={14} />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={testConnection}
+                disabled={!apiKey || testStatus === "testing"}
+                className="text-xs font-mono-trade border border-border px-4 py-2 rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              >
+                {testStatus === "testing" && <Icon name="Loader" size={12} className="animate-spin" />}
+                {testStatus === "testing" ? "Testing…" : "Test Connection"}
+              </button>
+              {testStatus === "ok" && <span className="text-xs font-mono-trade text-green flex items-center gap-1"><Icon name="CheckCircle" size={12} /> Connected successfully</span>}
+              {testStatus === "fail" && <span className="text-xs font-mono-trade text-red flex items-center gap-1"><Icon name="XCircle" size={12} /> Connection failed — check your keys</span>}
+            </div>
+            <div className="bg-secondary/50 rounded p-3 text-[10px] font-mono-trade text-muted-foreground leading-relaxed">
+              ⚠ Use read + trade permissions only. Never enable withdrawal permissions on bot API keys.
+            </div>
+          </div>
+        )}
+
+        {/* STEP 1: Pair & Capital */}
+        {step === 1 && (
+          <div className="space-y-5">
+            <div>
+              <div className="text-sm font-mono-trade font-semibold text-foreground mb-0.5">Pair & Capital</div>
+              <div className="text-xs text-muted-foreground font-mono-trade">Choose what to trade and how much capital to allocate.</div>
+            </div>
+            <div>
+              <label className={labelCls}>Trading Pair</label>
+              <div className="grid grid-cols-5 gap-2">
+                {PAIRS.map((p) => (
+                  <button key={p} onClick={() => setPair(p)} className={`py-2 text-xs font-mono-trade rounded border transition-colors ${pair === p ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>{p}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Capital Type</label>
+              <div className="flex gap-2">
+                {(["fixed", "percent"] as const).map((t) => (
+                  <button key={t} onClick={() => setCapitalType(t)} className={`flex-1 py-2 text-xs font-mono-trade rounded border transition-colors ${capitalType === t ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                    {t === "fixed" ? "Fixed Amount (USDT)" : "% of Portfolio"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>{capitalType === "fixed" ? "Capital (USDT)" : "Portfolio Allocation (%)"}</label>
+              <div className="relative">
+                <input value={capital} onChange={(e) => setCapital(e.target.value)} className={inputCls + " pr-14"} placeholder={capitalType === "fixed" ? "1000" : "10"} />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono-trade text-muted-foreground">{capitalType === "fixed" ? "USDT" : "%"}</span>
+              </div>
+            </div>
+            <div className="bg-secondary/50 rounded p-3 space-y-1">
+              <div className="flex justify-between text-xs font-mono-trade">
+                <span className="text-muted-foreground">Estimated capital</span>
+                <span className="text-foreground">{capitalType === "fixed" ? `$${parseFloat(capital || "0").toLocaleString()}` : `~$${(284720 * parseFloat(capital || "0") / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
+              </div>
+              <div className="flex justify-between text-xs font-mono-trade">
+                <span className="text-muted-foreground">Available balance</span>
+                <span className="text-green">$128,450 USDT</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 2: Strategy */}
+        {step === 2 && (
+          <div className="space-y-5">
+            <div>
+              <div className="text-sm font-mono-trade font-semibold text-foreground mb-0.5">Select Strategy</div>
+              <div className="text-xs text-muted-foreground font-mono-trade">Pick the trading logic the bot will use.</div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {STRATEGIES.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setStrategy(s.id)}
+                  className={`text-left p-4 rounded border transition-all ${strategy === s.id ? "border-green bg-green/[0.06]" : "border-border hover:border-border/80 hover:bg-white/[0.02]"}`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`w-6 h-6 rounded flex items-center justify-center ${strategy === s.id ? "bg-green/20" : "bg-secondary"}`}>
+                      <Icon name={s.icon} size={12} className={strategy === s.id ? "text-green" : "text-muted-foreground"} />
+                    </div>
+                    <span className={`text-xs font-mono-trade font-semibold ${strategy === s.id ? "text-green" : "text-foreground"}`}>{s.label}</span>
+                    {strategy === s.id && <Icon name="CheckCircle" size={12} className="text-green ml-auto" />}
+                  </div>
+                  <p className="text-[10px] font-mono-trade text-muted-foreground leading-relaxed">{s.desc}</p>
+                </button>
+              ))}
+            </div>
+            <div>
+              <div className={labelCls + " mb-2"}>Strategy Parameters</div>
+              <div className="grid grid-cols-2 gap-3">
+                {(STRATEGY_PARAMS[strategy] || []).map((p) => (
+                  <div key={p.key}>
+                    <label className={labelCls}>{p.label}</label>
+                    <input
+                      value={stratParams[p.key] ?? ""}
+                      onChange={(e) => setStratParams((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                      placeholder={p.placeholder}
+                      className={inputCls}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: Risk */}
+        {step === 3 && (
+          <div className="space-y-5">
+            <div>
+              <div className="text-sm font-mono-trade font-semibold text-foreground mb-0.5">Risk Management</div>
+              <div className="text-xs text-muted-foreground font-mono-trade">Define safety limits to protect your capital.</div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Stop Loss (%)</label>
+                <input value={stopLoss} onChange={(e) => setStopLoss(e.target.value)} className={inputCls} />
+                <p className="text-[10px] text-muted-foreground font-mono-trade mt-1">Close position if loss exceeds this %</p>
+              </div>
+              <div>
+                <label className={labelCls}>Take Profit (%)</label>
+                <input value={takeProfit} onChange={(e) => setTakeProfit(e.target.value)} className={inputCls} />
+                <p className="text-[10px] text-muted-foreground font-mono-trade mt-1">Lock in profit when target is reached</p>
+              </div>
+              <div>
+                <label className={labelCls}>Max Drawdown (%)</label>
+                <input value={maxDrawdown} onChange={(e) => setMaxDrawdown(e.target.value)} className={inputCls} />
+                <p className="text-[10px] text-muted-foreground font-mono-trade mt-1">Pause bot if total loss hits this level</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between py-3 border-t border-border">
+              <div>
+                <div className="text-sm font-mono-trade text-foreground">Trailing Stop Loss</div>
+                <div className="text-[10px] text-muted-foreground font-mono-trade mt-0.5">Stop loss follows price upward automatically</div>
+              </div>
+              <button onClick={() => setTrailingStop(!trailingStop)} className={`w-10 h-5 rounded-full relative transition-colors ${trailingStop ? "bg-green" : "bg-secondary"}`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${trailingStop ? "translate-x-5" : "translate-x-0.5"}`} />
+              </button>
+            </div>
+            <div className="flex items-center justify-between py-3 border-t border-border">
+              <div>
+                <div className="text-sm font-mono-trade text-foreground">Paper Mode</div>
+                <div className="text-[10px] text-muted-foreground font-mono-trade mt-0.5">Simulate trades without using real money</div>
+              </div>
+              <button onClick={() => setPaperMode(!paperMode)} className={`w-10 h-5 rounded-full relative transition-colors ${paperMode ? "bg-green" : "bg-secondary"}`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${paperMode ? "translate-x-5" : "translate-x-0.5"}`} />
+              </button>
+            </div>
+            {paperMode && (
+              <div className="bg-yellow-500/5 border border-yellow-500/20 rounded p-3 text-[10px] font-mono-trade text-yellow-400">
+                Paper mode is ON — no real orders will be placed. Recommended for testing your strategy first.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 4: Schedule */}
+        {step === 4 && (
+          <div className="space-y-5">
+            <div>
+              <div className="text-sm font-mono-trade font-semibold text-foreground mb-0.5">Trading Schedule</div>
+              <div className="text-xs text-muted-foreground font-mono-trade">Limit when the bot is active, or run 24/7.</div>
+            </div>
+            <div className="flex gap-2">
+              {(["always", "schedule"] as const).map((t) => (
+                <button key={t} onClick={() => setScheduleType(t)} className={`flex-1 py-2.5 text-xs font-mono-trade rounded border transition-colors ${scheduleType === t ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                  {t === "always" ? "24/7 Always On" : "Custom Schedule"}
+                </button>
+              ))}
+            </div>
+            {scheduleType === "schedule" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Start Time (UTC)</label>
+                    <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>End Time (UTC)</label>
+                    <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className={inputCls} />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Active Days</label>
+                  <div className="flex gap-2">
+                    {DAYS.map((d) => (
+                      <button key={d} onClick={() => toggleDay(d)} className={`flex-1 py-1.5 text-xs font-mono-trade rounded border transition-colors ${tradingDays.includes(d) ? "border-green bg-green/10 text-green" : "border-border text-muted-foreground hover:text-foreground"}`}>{d}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {scheduleType === "always" && (
+              <div className="bg-secondary/50 rounded p-3 text-[10px] font-mono-trade text-muted-foreground">
+                Bot will trade continuously 24 hours a day, 7 days a week, including weekends.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 5: Review */}
+        {step === 5 && (
+          <div className="space-y-5">
+            <div>
+              <div className="text-sm font-mono-trade font-semibold text-foreground mb-0.5">Review & Launch</div>
+              <div className="text-xs text-muted-foreground font-mono-trade">Confirm your bot configuration before starting.</div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Exchange", value: exchange },
+                { label: "Pair", value: pair },
+                { label: "Capital", value: `${capital} ${capitalType === "fixed" ? "USDT" : "%"}` },
+                { label: "Strategy", value: STRATEGIES.find((s) => s.id === strategy)?.label ?? strategy },
+                { label: "Stop Loss", value: `${stopLoss}%` },
+                { label: "Take Profit", value: `${takeProfit}%` },
+                { label: "Max Drawdown", value: `${maxDrawdown}%` },
+                { label: "Schedule", value: scheduleType === "always" ? "24/7" : `${startTime}–${endTime} UTC` },
+              ].map((r) => (
+                <div key={r.label} className="bg-secondary rounded p-3">
+                  <div className="text-[10px] text-muted-foreground font-mono-trade uppercase tracking-wider mb-1">{r.label}</div>
+                  <div className="text-sm font-mono-trade font-semibold text-foreground">{r.value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {trailingStop && <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono-trade">TRAILING STOP</span>}
+              {paperMode && <span className="text-[10px] px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400 font-mono-trade">PAPER MODE</span>}
+              {scheduleType === "schedule" && tradingDays.map((d) => (
+                <span key={d} className="text-[10px] px-2 py-0.5 rounded bg-secondary text-muted-foreground font-mono-trade">{d}</span>
+              ))}
+            </div>
+            {!paperMode && (
+              <div className="bg-red/5 border border-red/20 rounded p-3 text-[10px] font-mono-trade text-red leading-relaxed">
+                ⚠ LIVE MODE — real funds will be used. Double-check all parameters before launching.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+          disabled={step === 0}
+          className="text-xs font-mono-trade border border-border text-muted-foreground px-4 py-2 rounded hover:text-foreground transition-colors disabled:opacity-30 flex items-center gap-1.5"
+        >
+          <Icon name="ChevronLeft" size={12} /> Back
+        </button>
+        <span className="text-[10px] font-mono-trade text-muted-foreground">{step + 1} / {SETUP_STEPS.length}</span>
+        {step < SETUP_STEPS.length - 1 ? (
+          <button
+            onClick={() => canNext() && setStep((s) => s + 1)}
+            disabled={!canNext()}
+            className="text-xs font-mono-trade bg-green text-black font-bold px-5 py-2 rounded hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-1.5"
+          >
+            Next <Icon name="ChevronRight" size={12} />
+          </button>
+        ) : (
+          <button
+            onClick={() => setSaved(true)}
+            className="text-xs font-mono-trade bg-green text-black font-bold px-5 py-2 rounded hover:opacity-90 transition-opacity flex items-center gap-1.5"
+          >
+            <Icon name="Zap" size={12} /> Launch Bot
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Index() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const { price: btcPrice, dir: btcDir } = useFakePrice(67420, 0.0008);
@@ -952,6 +1404,7 @@ export default function Index() {
       case "alerts": return <Alerts />;
       case "history": return <History />;
       case "analytics": return <Analytics />;
+      case "botsetup": return <BotSetup />;
       case "settings": return <Settings />;
       default: return null;
     }
