@@ -1,14 +1,864 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState, useEffect } from "react";
+import Icon from "@/components/ui/icon";
 
-const Index = () => {
+const NAV_ITEMS = [
+  { id: "dashboard", label: "Dashboard", icon: "LayoutDashboard" },
+  { id: "charts", label: "Charts", icon: "LineChart" },
+  { id: "trading", label: "Trading", icon: "Zap" },
+  { id: "portfolio", label: "Portfolio", icon: "PieChart" },
+  { id: "alerts", label: "Alerts", icon: "Bell" },
+  { id: "history", label: "History", icon: "History" },
+  { id: "analytics", label: "Analytics", icon: "BarChart2" },
+  { id: "settings", label: "Settings", icon: "Settings" },
+];
+
+const PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"];
+
+function useFakePrice(base: number, volatility = 0.001) {
+  const [price, setPrice] = useState(base);
+  const [dir, setDir] = useState<"up" | "down">("up");
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setPrice((p) => {
+        const delta = p * volatility * (Math.random() - 0.48);
+        const next = Math.max(p + delta, base * 0.8);
+        setDir(delta >= 0 ? "up" : "down");
+        return +next.toFixed(2);
+      });
+    }, 800);
+    return () => clearInterval(iv);
+  }, [base, volatility]);
+  return { price, dir };
+}
+
+function useFakeCandles(count = 60) {
+  const [candles, setCandles] = useState<{ o: number; h: number; l: number; c: number }[]>(() => {
+    let p = 67000;
+    return Array.from({ length: count }, () => {
+      const o = p;
+      const move = p * 0.012 * (Math.random() - 0.48);
+      const c = p + move;
+      const h = Math.max(o, c) + Math.abs(move) * Math.random() * 0.5;
+      const l = Math.min(o, c) - Math.abs(move) * Math.random() * 0.5;
+      p = c;
+      return { o, h, l, c };
+    });
+  });
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setCandles((prev) => {
+        const last = prev[prev.length - 1];
+        const move = last.c * 0.003 * (Math.random() - 0.48);
+        const c = last.c + move;
+        const h = Math.max(last.c, c) + Math.abs(move) * 0.3;
+        const l = Math.min(last.c, c) - Math.abs(move) * 0.3;
+        return [...prev.slice(1), { o: last.c, h, l, c }];
+      });
+    }, 1200);
+    return () => clearInterval(iv);
+  }, []);
+
+  return candles;
+}
+
+function CandleChart({ candles }: { candles: { o: number; h: number; l: number; c: number }[] }) {
+  const W = 800, H = 220;
+  const min = Math.min(...candles.map((c) => c.l));
+  const max = Math.max(...candles.map((c) => c.h));
+  const range = max - min || 1;
+  const cw = W / candles.length;
+  const pad = 2;
+  const toY = (v: number) => H - ((v - min) / range) * (H - 16) - 8;
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4 color-black text-black">Hi there!</h1>
-        <p className="text-xl text-gray-600">here will be your project</p>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="hsl(152,80%,48%)" stopOpacity="0.15" />
+          <stop offset="100%" stopColor="hsl(152,80%,48%)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polyline
+        fill="url(#chartGrad)"
+        stroke="none"
+        points={[
+          ...candles.map((c, i) => `${i * cw + cw / 2},${toY(c.c)}`),
+          `${(candles.length - 1) * cw + cw / 2},${H}`,
+          `0,${H}`,
+        ].join(" ")}
+      />
+      {[0.25, 0.5, 0.75].map((t) => (
+        <line key={t} x1={0} y1={H * t} x2={W} y2={H * t} stroke="hsl(220,12%,14%)" strokeWidth={1} />
+      ))}
+      {candles.map((c, i) => {
+        const x = i * cw;
+        const bullish = c.c >= c.o;
+        const color = bullish ? "hsl(152,80%,48%)" : "hsl(0,72%,55%)";
+        const bodyTop = toY(Math.max(c.o, c.c));
+        const bodyH = Math.max(Math.abs(toY(c.o) - toY(c.c)), 1);
+        return (
+          <g key={i}>
+            <line x1={x + cw / 2} y1={toY(c.h)} x2={x + cw / 2} y2={toY(c.l)} stroke={color} strokeWidth={0.8} />
+            <rect x={x + pad} y={bodyTop} width={cw - pad * 2} height={bodyH} fill={color} rx={0.5} />
+          </g>
+        );
+      })}
+      <polyline
+        fill="none"
+        stroke="hsl(152,80%,48%)"
+        strokeWidth={1.5}
+        strokeOpacity={0.6}
+        points={candles.map((c, i) => `${i * cw + cw / 2},${toY(c.c)}`).join(" ")}
+      />
+    </svg>
+  );
+}
+
+function OrderBookRow({ price, size, side, maxSize }: { price: number; size: number; side: "bid" | "ask"; maxSize: number }) {
+  const pct = (size / maxSize) * 100;
+  return (
+    <div className="relative flex items-center text-xs font-mono-trade py-[2px] px-2 hover:bg-white/[0.03] cursor-default">
+      <div
+        className="absolute inset-y-0 right-0"
+        style={{ width: `${pct}%`, background: side === "bid" ? "hsl(152 80% 48% / 0.08)" : "hsl(0 72% 55% / 0.08)" }}
+      />
+      <span className={`flex-1 ${side === "bid" ? "text-green" : "text-red"}`}>
+        {price.toLocaleString("en-US", { minimumFractionDigits: 1 })}
+      </span>
+      <span className="flex-1 text-right text-muted-foreground">{size.toFixed(4)}</span>
+      <span className="flex-1 text-right text-muted-foreground">{(price * size).toFixed(0)}</span>
+    </div>
+  );
+}
+
+function useOrderBook(basePrice: number) {
+  const [book, setBook] = useState<{ bids: number[][]; asks: number[][] }>({ bids: [], asks: [] });
+  useEffect(() => {
+    const gen = (p: number) => {
+      const bids = Array.from({ length: 10 }, (_, i) => [
+        +(p - (i + 1) * (p * 0.0002)).toFixed(1),
+        +(Math.random() * 2 + 0.1).toFixed(4),
+      ]);
+      const asks = Array.from({ length: 10 }, (_, i) => [
+        +(p + (i + 1) * (p * 0.0002)).toFixed(1),
+        +(Math.random() * 2 + 0.1).toFixed(4),
+      ]);
+      setBook({ bids, asks });
+    };
+    gen(basePrice);
+    const iv = setInterval(() => gen(basePrice), 1000);
+    return () => clearInterval(iv);
+  }, [basePrice]);
+  return book;
+}
+
+function StatCard({ label, value, change, icon }: { label: string; value: string; change?: string; icon: string }) {
+  const up = change && !change.startsWith("-");
+  return (
+    <div className="panel p-4 animate-fade-in">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-widest font-mono-trade">{label}</span>
+        <div className="w-7 h-7 rounded flex items-center justify-center bg-secondary">
+          <Icon name={icon} size={14} className="text-muted-foreground" />
+        </div>
+      </div>
+      <div className="text-xl font-semibold font-mono-trade text-foreground">{value}</div>
+      {change && (
+        <div className={`text-xs mt-1 font-mono-trade ${up ? "text-green" : "text-red"}`}>
+          {up ? "▲" : "▼"} {change}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dashboard({ btcPrice, btcDir }: { btcPrice: number; btcDir: string }) {
+  const candles = useFakeCandles(50);
+  const { price: ethPrice } = useFakePrice(3540, 0.001);
+  const { price: solPrice } = useFakePrice(185, 0.002);
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="grid grid-cols-4 gap-3">
+        <StatCard label="Portfolio Value" value="$284,720" change="+2.34%" icon="Wallet" />
+        <StatCard label="Today P&L" value="+$6,512" change="+2.34%" icon="TrendingUp" />
+        <StatCard label="Open Positions" value="7" icon="Layers" />
+        <StatCard label="Win Rate" value="68.4%" change="+1.2%" icon="Target" />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="panel p-0 overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-green animate-pulse" />
+            <span className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Live Prices</span>
+          </div>
+          <div className="divide-y divide-border">
+            {[
+              { pair: "BTC/USDT", price: btcPrice, chg: "+2.14%", dir: btcDir },
+              { pair: "ETH/USDT", price: ethPrice, chg: "+0.87%", dir: "up" },
+              { pair: "SOL/USDT", price: solPrice, chg: "-1.23%", dir: "down" },
+              { pair: "BNB/USDT", price: 621.5, chg: "+0.44%", dir: "up" },
+            ].map((r) => (
+              <div key={r.pair} className="flex items-center justify-between px-4 py-2.5 hover:bg-white/[0.02]">
+                <span className="text-xs font-mono-trade text-foreground">{r.pair}</span>
+                <span className={`text-sm font-mono-trade font-medium ${r.dir === "up" ? "text-green" : "text-red"}`}>
+                  {r.price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                </span>
+                <span className={`text-xs font-mono-trade ${r.chg.startsWith("+") ? "text-green" : "text-red"}`}>{r.chg}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="col-span-2 panel p-0 overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-mono-trade font-medium">BTC/USDT</span>
+              <span className={`text-lg font-mono-trade font-bold ${btcDir === "up" ? "text-green" : "text-red"}`}>
+                ${btcPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <span className="text-xs font-mono-trade text-green bg-green/10 px-2 py-0.5 rounded">+2.14%</span>
+          </div>
+          <div className="h-[180px] p-2">
+            <CandleChart candles={candles} />
+          </div>
+        </div>
+      </div>
+      <div className="panel p-0">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <span className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Active Orders</span>
+          <button className="text-xs text-green font-mono-trade hover:underline">View All</button>
+        </div>
+        <table className="w-full text-xs font-mono-trade">
+          <thead>
+            <tr className="border-b border-border">
+              {["Pair", "Type", "Side", "Price", "Amount", "Filled", "Status"].map((h) => (
+                <th key={h} className="px-4 py-2 text-left text-muted-foreground font-normal uppercase tracking-wider text-[10px]">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {[
+              { pair: "BTC/USDT", type: "Limit", side: "BUY", price: "66,800.00", amount: "0.5000", filled: "0.2341", status: "Partial" },
+              { pair: "ETH/USDT", type: "Market", side: "SELL", price: "3,540.20", amount: "2.0000", filled: "2.0000", status: "Filled" },
+              { pair: "SOL/USDT", type: "Limit", side: "BUY", price: "182.50", amount: "10.000", filled: "0.0000", status: "Open" },
+            ].map((o, i) => (
+              <tr key={i} className="hover:bg-white/[0.02]">
+                <td className="px-4 py-2.5 text-foreground">{o.pair}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{o.type}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${o.side === "BUY" ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}>{o.side}</span>
+                </td>
+                <td className="px-4 py-2.5 text-foreground">{o.price}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{o.amount}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{o.filled}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    o.status === "Filled" ? "bg-green/10 text-green" :
+                    o.status === "Partial" ? "bg-yellow-500/10 text-yellow-400" :
+                    "bg-muted text-muted-foreground"
+                  }`}>{o.status}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
-};
+}
 
-export default Index;
+function Charts({ btcPrice, btcDir }: { btcPrice: number; btcDir: string }) {
+  const [tf, setTf] = useState("1H");
+  const [pair, setPair] = useState("BTC/USDT");
+  const candles = useFakeCandles(80);
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="panel p-0">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-4 flex-wrap">
+          <select
+            value={pair}
+            onChange={(e) => setPair(e.target.value)}
+            className="bg-secondary border border-border text-sm font-mono-trade text-foreground px-2 py-1 rounded focus:outline-none"
+          >
+            {PAIRS.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          {["1M", "5M", "15M", "1H", "4H", "1D", "1W"].map((t) => (
+            <button key={t} onClick={() => setTf(t)} className={`text-xs font-mono-trade px-2 py-1 rounded transition-colors ${tf === t ? "bg-green/10 text-green" : "text-muted-foreground hover:text-foreground"}`}>{t}</button>
+          ))}
+          <div className="ml-auto flex items-center gap-3">
+            <span className={`text-2xl font-mono-trade font-bold ${btcDir === "up" ? "text-green" : "text-red"}`}>
+              ${btcPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-xs font-mono-trade text-green bg-green/10 px-2 py-0.5 rounded">+2.14% (24h)</span>
+          </div>
+        </div>
+        <div className="h-[340px] p-3">
+          <CandleChart candles={candles} />
+        </div>
+        <div className="h-[60px] px-3 pb-3 flex items-end gap-[1px]">
+          {candles.map((c, i) => {
+            const vol = Math.random() * 100;
+            const bull = c.c >= c.o;
+            return (
+              <div key={i} className="flex-1 rounded-sm" style={{ height: `${20 + vol * 0.4}px`, background: bull ? "hsl(152 80% 48% / 0.4)" : "hsl(0 72% 55% / 0.4)" }} />
+            );
+          })}
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: "24h High", value: "$68,420" },
+          { label: "24h Low", value: "$64,810" },
+          { label: "24h Volume", value: "24,831 BTC" },
+          { label: "Market Cap", value: "$1.32T" },
+        ].map((s) => (
+          <div key={s.label} className="panel px-4 py-3">
+            <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade mb-1">{s.label}</div>
+            <div className="text-sm font-mono-trade font-semibold text-foreground">{s.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Trading({ btcPrice, btcDir }: { btcPrice: number; btcDir: string }) {
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [orderType, setOrderType] = useState("Limit");
+  const [amount, setAmount] = useState("0.1");
+  const [price, setPrice] = useState("");
+  const book = useOrderBook(btcPrice);
+  const candles = useFakeCandles(60);
+  const maxBidSize = book.bids.length ? Math.max(...book.bids.map((b) => b[1])) : 1;
+  const maxAskSize = book.asks.length ? Math.max(...book.asks.map((a) => a[1])) : 1;
+
+  return (
+    <div className="grid grid-cols-3 gap-3 animate-fade-in">
+      <div className="col-span-2 space-y-3">
+        <div className="panel p-0">
+          <div className="px-4 py-3 border-b border-border flex items-center gap-4">
+            <span className="text-sm font-mono-trade font-semibold">BTC/USDT</span>
+            <span className={`text-xl font-mono-trade font-bold ${btcDir === "up" ? "text-green" : "text-red"}`}>
+              ${btcPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </span>
+            <div className="ml-auto flex gap-4 text-xs font-mono-trade text-muted-foreground">
+              <span>H: <span className="text-foreground">$68,420</span></span>
+              <span>L: <span className="text-foreground">$64,810</span></span>
+              <span>Vol: <span className="text-foreground">24,831 BTC</span></span>
+            </div>
+          </div>
+          <div className="h-[260px] p-3">
+            <CandleChart candles={candles} />
+          </div>
+        </div>
+        <div className="panel p-0">
+          <div className="px-4 py-3 border-b border-border">
+            <span className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Order Book</span>
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-border">
+            <div>
+              <div className="px-2 py-1.5 border-b border-border grid grid-cols-3 text-[10px] text-muted-foreground font-mono-trade uppercase tracking-wider">
+                <span>Bid Price</span><span className="text-right">Size</span><span className="text-right">Total</span>
+              </div>
+              {book.bids.map((b, i) => <OrderBookRow key={i} price={b[0]} size={b[1]} side="bid" maxSize={maxBidSize} />)}
+            </div>
+            <div>
+              <div className="px-2 py-1.5 border-b border-border grid grid-cols-3 text-[10px] text-muted-foreground font-mono-trade uppercase tracking-wider">
+                <span>Ask Price</span><span className="text-right">Size</span><span className="text-right">Total</span>
+              </div>
+              {book.asks.map((a, i) => <OrderBookRow key={i} price={a[0]} size={a[1]} side="ask" maxSize={maxAskSize} />)}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-3">
+        <div className="panel p-4 space-y-4">
+          <div className="flex rounded overflow-hidden border border-border">
+            <button onClick={() => setSide("buy")} className={`flex-1 py-2 text-sm font-mono-trade font-semibold transition-colors ${side === "buy" ? "bg-green text-black" : "text-muted-foreground hover:text-foreground"}`}>BUY</button>
+            <button onClick={() => setSide("sell")} className={`flex-1 py-2 text-sm font-mono-trade font-semibold transition-colors ${side === "sell" ? "bg-red text-white" : "text-muted-foreground hover:text-foreground"}`}>SELL</button>
+          </div>
+          <div className="flex gap-1">
+            {["Limit", "Market", "Stop"].map((t) => (
+              <button key={t} onClick={() => setOrderType(t)} className={`flex-1 text-xs py-1 rounded font-mono-trade transition-colors ${orderType === t ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{t}</button>
+            ))}
+          </div>
+          <div className="space-y-2">
+            {orderType !== "Market" && (
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Price (USDT)</label>
+                <div className="relative">
+                  <input value={price || btcPrice.toFixed(2)} onChange={(e) => setPrice(e.target.value)} className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none focus:border-green/50" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-mono-trade">USDT</span>
+                </div>
+              </div>
+            )}
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Amount (BTC)</label>
+              <div className="relative">
+                <input value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none focus:border-green/50" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-mono-trade">BTC</span>
+              </div>
+            </div>
+            <div className="flex gap-1 pt-1">
+              {["25%", "50%", "75%", "100%"].map((p) => (
+                <button key={p} className="flex-1 text-[10px] font-mono-trade py-1 rounded bg-secondary text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">{p}</button>
+              ))}
+            </div>
+            <div className="border-t border-border pt-3 space-y-1.5">
+              <div className="flex justify-between text-xs font-mono-trade">
+                <span className="text-muted-foreground">Total</span>
+                <span className="text-foreground">${(parseFloat(amount || "0") * btcPrice).toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between text-xs font-mono-trade">
+                <span className="text-muted-foreground">Fee (0.1%)</span>
+                <span className="text-foreground">${(parseFloat(amount || "0") * btcPrice * 0.001).toFixed(2)}</span>
+              </div>
+            </div>
+            <button className={`w-full py-3 rounded text-sm font-mono-trade font-bold transition-all hover:opacity-90 active:scale-[0.99] ${side === "buy" ? "bg-green text-black" : "bg-red text-white"}`}>
+              {side === "buy" ? "BUY BTC" : "SELL BTC"}
+            </button>
+          </div>
+        </div>
+        <div className="panel p-4">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade mb-3">Available Balance</div>
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs font-mono-trade"><span className="text-muted-foreground">USDT</span><span className="text-foreground">128,450.00</span></div>
+            <div className="flex justify-between text-xs font-mono-trade"><span className="text-muted-foreground">BTC</span><span className="text-foreground">1.24830</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Portfolio() {
+  const positions = [
+    { asset: "BTC", amount: "1.2483", entry: "$64,200", current: "$67,420", pnl: "+$4,015", pct: "+4.97%", value: "$84,112", dir: "up" },
+    { asset: "ETH", amount: "12.500", entry: "$3,480", current: "$3,540", pnl: "+$750", pct: "+1.72%", value: "$44,250", dir: "up" },
+    { asset: "SOL", amount: "250.00", entry: "$190", current: "$185", pnl: "-$1,250", pct: "-2.63%", value: "$46,250", dir: "down" },
+    { asset: "BNB", amount: "45.00", entry: "$610", current: "$621", pnl: "+$495", pct: "+1.80%", value: "$27,945", dir: "up" },
+  ];
+  const allocation = [
+    { asset: "BTC", pct: 42, color: "hsl(43,96%,56%)" },
+    { asset: "ETH", pct: 22, color: "hsl(210,100%,60%)" },
+    { asset: "SOL", pct: 23, color: "hsl(280,80%,60%)" },
+    { asset: "BNB", pct: 13, color: "hsl(186,100%,50%)" },
+  ];
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="grid grid-cols-4 gap-3">
+        <StatCard label="Total Value" value="$284,720" change="+$6,512 today" icon="Wallet" />
+        <StatCard label="Total P&L" value="+$14,230" change="+5.26%" icon="TrendingUp" />
+        <StatCard label="Unrealized" value="+$4,010" change="+1.43%" icon="Activity" />
+        <StatCard label="Assets" value="4" icon="Layers" />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-2 panel p-0">
+          <div className="px-4 py-3 border-b border-border">
+            <span className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Open Positions</span>
+          </div>
+          <table className="w-full text-xs font-mono-trade">
+            <thead>
+              <tr className="border-b border-border">
+                {["Asset", "Amount", "Entry Price", "Current", "Value", "P&L", "%"].map((h) => (
+                  <th key={h} className="px-4 py-2 text-left text-muted-foreground font-normal uppercase tracking-wider text-[10px]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {positions.map((p) => (
+                <tr key={p.asset} className="hover:bg-white/[0.02]">
+                  <td className="px-4 py-3 font-semibold text-foreground">{p.asset}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{p.amount}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{p.entry}</td>
+                  <td className="px-4 py-3 text-foreground">{p.current}</td>
+                  <td className="px-4 py-3 text-foreground">{p.value}</td>
+                  <td className={`px-4 py-3 ${p.dir === "up" ? "text-green" : "text-red"}`}>{p.pnl}</td>
+                  <td className={`px-4 py-3 ${p.dir === "up" ? "text-green" : "text-red"}`}>{p.pct}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="panel p-4">
+          <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-4">Allocation</div>
+          <div className="space-y-3">
+            {allocation.map((a) => (
+              <div key={a.asset}>
+                <div className="flex justify-between text-xs font-mono-trade mb-1">
+                  <span className="text-foreground">{a.asset}</span>
+                  <span className="text-muted-foreground">{a.pct}%</span>
+                </div>
+                <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${a.pct}%`, background: a.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 pt-4 border-t border-border space-y-2">
+            <div className="flex justify-between text-xs font-mono-trade"><span className="text-muted-foreground">Margin Used</span><span className="text-foreground">$42,700</span></div>
+            <div className="flex justify-between text-xs font-mono-trade"><span className="text-muted-foreground">Free Margin</span><span className="text-green">$86,320</span></div>
+            <div className="h-1.5 bg-secondary rounded-full mt-2 overflow-hidden">
+              <div className="h-full rounded-full bg-green" style={{ width: "33%" }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Alerts() {
+  const alerts = [
+    { id: 1, pair: "BTC/USDT", type: "Price Above", value: "$70,000", status: "active", created: "2026-05-14 10:30" },
+    { id: 2, pair: "ETH/USDT", type: "Price Below", value: "$3,400", status: "active", created: "2026-05-14 12:00" },
+    { id: 3, pair: "SOL/USDT", type: "% Change", value: "-5%", status: "triggered", created: "2026-05-13 09:00" },
+    { id: 4, pair: "BNB/USDT", type: "Price Above", value: "$650", status: "paused", created: "2026-05-12 15:00" },
+  ];
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-mono-trade text-muted-foreground uppercase tracking-widest">Price Alerts</h2>
+        <button className="flex items-center gap-1.5 text-xs font-mono-trade text-green border border-green/30 px-3 py-1.5 rounded hover:bg-green/10 transition-colors">
+          <Icon name="Plus" size={12} /> New Alert
+        </button>
+      </div>
+      <div className="panel p-0">
+        <table className="w-full text-xs font-mono-trade">
+          <thead>
+            <tr className="border-b border-border">
+              {["Pair", "Condition", "Target", "Status", "Created", "Actions"].map((h) => (
+                <th key={h} className="px-4 py-3 text-left text-muted-foreground font-normal uppercase tracking-wider text-[10px]">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {alerts.map((a) => (
+              <tr key={a.id} className="hover:bg-white/[0.02]">
+                <td className="px-4 py-3 font-medium text-foreground">{a.pair}</td>
+                <td className="px-4 py-3 text-muted-foreground">{a.type}</td>
+                <td className="px-4 py-3 text-foreground">{a.value}</td>
+                <td className="px-4 py-3">
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
+                    a.status === "active" ? "bg-green/10 text-green" :
+                    a.status === "triggered" ? "bg-blue-500/10 text-blue-400" :
+                    "bg-muted text-muted-foreground"
+                  }`}>{a.status.toUpperCase()}</span>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">{a.created}</td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    <button className="text-muted-foreground hover:text-foreground"><Icon name="Edit2" size={12} /></button>
+                    <button className="text-muted-foreground hover:text-red"><Icon name="Trash2" size={12} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function History() {
+  const trades = [
+    { time: "2026-05-15 14:22", pair: "BTC/USDT", side: "BUY", type: "Limit", price: "$66,800", amount: "0.5000", fee: "$33.40", pnl: "+$310", status: "Filled" },
+    { time: "2026-05-15 11:05", pair: "ETH/USDT", side: "SELL", type: "Market", price: "$3,540", amount: "2.0000", fee: "$7.08", pnl: "+$120", status: "Filled" },
+    { time: "2026-05-14 18:30", pair: "SOL/USDT", side: "BUY", type: "Limit", price: "$188", amount: "50.000", fee: "$9.40", pnl: "-$150", status: "Filled" },
+    { time: "2026-05-14 09:15", pair: "BNB/USDT", side: "BUY", type: "Market", price: "$612", amount: "10.000", fee: "$6.12", pnl: "+$90", status: "Filled" },
+    { time: "2026-05-13 21:40", pair: "BTC/USDT", side: "SELL", type: "Limit", price: "$65,200", amount: "0.2500", fee: "$16.30", pnl: "+$850", status: "Filled" },
+  ];
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="grid grid-cols-4 gap-3">
+        <StatCard label="Total Trades" value="284" icon="Hash" />
+        <StatCard label="Total Volume" value="$4.2M" icon="BarChart" />
+        <StatCard label="Total Fees" value="$4,210" icon="DollarSign" />
+        <StatCard label="Realized P&L" value="+$24,810" change="+$1,120 today" icon="TrendingUp" />
+      </div>
+      <div className="panel p-0">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <span className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">Trade History</span>
+          <div className="flex gap-2">
+            <select className="bg-secondary border border-border text-xs font-mono-trade text-foreground px-2 py-1 rounded focus:outline-none">
+              {PAIRS.map((p) => <option key={p}>{p}</option>)}
+            </select>
+            <button className="text-xs text-muted-foreground font-mono-trade border border-border px-2 py-1 rounded hover:text-foreground transition-colors flex items-center gap-1">
+              <Icon name="Download" size={11} /> Export
+            </button>
+          </div>
+        </div>
+        <table className="w-full text-xs font-mono-trade">
+          <thead>
+            <tr className="border-b border-border">
+              {["Time", "Pair", "Side", "Type", "Price", "Amount", "Fee", "P&L", "Status"].map((h) => (
+                <th key={h} className="px-4 py-2.5 text-left text-muted-foreground font-normal uppercase tracking-wider text-[10px]">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {trades.map((t, i) => (
+              <tr key={i} className="hover:bg-white/[0.02]">
+                <td className="px-4 py-2.5 text-muted-foreground">{t.time}</td>
+                <td className="px-4 py-2.5 text-foreground">{t.pair}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${t.side === "BUY" ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}>{t.side}</span>
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground">{t.type}</td>
+                <td className="px-4 py-2.5 text-foreground">{t.price}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{t.amount}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{t.fee}</td>
+                <td className={`px-4 py-2.5 ${t.pnl.startsWith("+") ? "text-green" : "text-red"}`}>{t.pnl}</td>
+                <td className="px-4 py-2.5">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green/10 text-green">{t.status}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function Analytics() {
+  const months = ["Jan", "Feb", "Mar", "Apr", "May"];
+  const pnlData = [12400, -3200, 18700, 8900, 14200];
+  const maxAbs = Math.max(...pnlData.map(Math.abs));
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="grid grid-cols-4 gap-3">
+        <StatCard label="Sharpe Ratio" value="2.14" change="+0.3 vs last month" icon="Activity" />
+        <StatCard label="Max Drawdown" value="-8.4%" icon="TrendingDown" />
+        <StatCard label="Avg Trade" value="+$87.4" change="+12% vs last month" icon="BarChart2" />
+        <StatCard label="Best Day" value="+$4,820" change="May 12" icon="Star" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="panel p-4">
+          <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-4">Monthly P&L</div>
+          <div className="flex items-end gap-2 h-40">
+            {pnlData.map((v, i) => {
+              const h = (Math.abs(v) / maxAbs) * 100;
+              const pos = v >= 0;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1 justify-end h-full">
+                  <div className={`text-[10px] font-mono-trade ${pos ? "text-green" : "text-red"}`}>${(v / 1000).toFixed(1)}k</div>
+                  <div className="w-full rounded-t" style={{ height: `${h}%`, background: pos ? "hsl(152 80% 48% / 0.6)" : "hsl(0 72% 55% / 0.6)" }} />
+                  <div className="text-[10px] text-muted-foreground font-mono-trade">{months[i]}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="panel p-4">
+          <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-4">Performance Metrics</div>
+          <div className="space-y-3">
+            {[
+              { label: "Win Rate", value: "68.4%", bar: 68, color: "hsl(152,80%,48%)" },
+              { label: "Profit Factor", value: "2.31", bar: 77, color: "hsl(210,100%,60%)" },
+              { label: "Avg Win/Loss", value: "1.84", bar: 62, color: "hsl(43,96%,56%)" },
+              { label: "Expectancy", value: "$87.4", bar: 54, color: "hsl(186,100%,50%)" },
+            ].map((m) => (
+              <div key={m.label}>
+                <div className="flex justify-between text-xs font-mono-trade mb-1">
+                  <span className="text-muted-foreground">{m.label}</span>
+                  <span className="text-foreground">{m.value}</span>
+                </div>
+                <div className="h-1 bg-secondary rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${m.bar}%`, background: m.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="panel p-4">
+        <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-3">Top Performing Pairs</div>
+        <div className="grid grid-cols-5 gap-3">
+          {[
+            { pair: "BTC/USDT", pnl: "+$14,200", trades: 42, wr: "71%" },
+            { pair: "ETH/USDT", pnl: "+$6,800", trades: 38, wr: "66%" },
+            { pair: "SOL/USDT", pnl: "+$3,100", trades: 61, wr: "62%" },
+            { pair: "BNB/USDT", pnl: "+$1,900", trades: 24, wr: "75%" },
+            { pair: "XRP/USDT", pnl: "-$210", trades: 18, wr: "44%" },
+          ].map((p) => (
+            <div key={p.pair} className="bg-secondary rounded p-3">
+              <div className="text-xs font-mono-trade font-semibold text-foreground mb-2">{p.pair}</div>
+              <div className={`text-sm font-mono-trade font-bold mb-1 ${p.pnl.startsWith("+") ? "text-green" : "text-red"}`}>{p.pnl}</div>
+              <div className="text-[10px] text-muted-foreground font-mono-trade">{p.trades} trades · WR {p.wr}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Settings() {
+  const [botEnabled, setBotEnabled] = useState(true);
+  const [riskPct, setRiskPct] = useState("2");
+  const [maxPos, setMaxPos] = useState("5");
+  return (
+    <div className="space-y-4 animate-fade-in max-w-2xl">
+      <div className="panel p-5 space-y-4">
+        <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-2">Bot Configuration</div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-mono-trade text-foreground">Auto Trading</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Enable automated order execution</div>
+          </div>
+          <button onClick={() => setBotEnabled(!botEnabled)} className={`w-10 h-5 rounded-full relative transition-colors ${botEnabled ? "bg-green" : "bg-secondary"}`}>
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${botEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
+          </button>
+        </div>
+        <div className="border-t border-border pt-4 grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Risk Per Trade (%)</label>
+            <input value={riskPct} onChange={(e) => setRiskPct(e.target.value)} className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none focus:border-green/50" />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Max Open Positions</label>
+            <input value={maxPos} onChange={(e) => setMaxPos(e.target.value)} className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none focus:border-green/50" />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Default Exchange</label>
+            <select className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none">
+              <option>Binance</option><option>Bybit</option><option>OKX</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono-trade block mb-1">Default Pair</label>
+            <select className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono-trade text-foreground focus:outline-none">
+              {PAIRS.map((p) => <option key={p}>{p}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div className="panel p-5">
+        <div className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest mb-4">API Keys</div>
+        <div className="space-y-3">
+          {["Binance", "Bybit"].map((ex) => (
+            <div key={ex} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+              <div>
+                <div className="text-sm font-mono-trade text-foreground">{ex}</div>
+                <div className="text-xs text-muted-foreground font-mono-trade">••••••••••••••••••••••••</div>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-green/10 text-green font-mono-trade">Connected</span>
+                <button className="text-xs text-muted-foreground hover:text-foreground font-mono-trade border border-border px-2 py-0.5 rounded">Edit</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button className="mt-3 text-xs text-green font-mono-trade border border-green/30 px-3 py-1.5 rounded hover:bg-green/10 transition-colors flex items-center gap-1">
+          <Icon name="Plus" size={12} /> Add Exchange
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function Index() {
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const { price: btcPrice, dir: btcDir } = useFakePrice(67420, 0.0008);
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const iv = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const renderPage = () => {
+    switch (activeTab) {
+      case "dashboard": return <Dashboard btcPrice={btcPrice} btcDir={btcDir} />;
+      case "charts": return <Charts btcPrice={btcPrice} btcDir={btcDir} />;
+      case "trading": return <Trading btcPrice={btcPrice} btcDir={btcDir} />;
+      case "portfolio": return <Portfolio />;
+      case "alerts": return <Alerts />;
+      case "history": return <History />;
+      case "analytics": return <Analytics />;
+      case "settings": return <Settings />;
+      default: return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="h-12 border-b border-border flex items-center px-4 gap-4 shrink-0 bg-background/95">
+        <div className="flex items-center gap-2 mr-4">
+          <div className="w-6 h-6 rounded bg-green flex items-center justify-center">
+            <Icon name="Zap" size={12} className="text-black" />
+          </div>
+          <span className="text-sm font-mono-trade font-bold text-foreground tracking-tight">QUANTBOT</span>
+        </div>
+        <div className="flex items-center gap-6 flex-1 overflow-hidden">
+          {[
+            { pair: "BTC/USDT", price: btcPrice, chg: "+2.14%", up: true },
+            { pair: "ETH/USDT", price: 3540.2, chg: "+0.87%", up: true },
+            { pair: "SOL/USDT", price: 185.4, chg: "-1.23%", up: false },
+            { pair: "BNB/USDT", price: 621.5, chg: "+0.44%", up: true },
+          ].map((t) => (
+            <div key={t.pair} className="flex items-center gap-2 text-xs font-mono-trade shrink-0">
+              <span className="text-muted-foreground">{t.pair}</span>
+              <span className={`font-medium ${t.up ? "text-green" : "text-red"}`}>
+                {t.price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </span>
+              <span className={`text-[10px] ${t.up ? "text-green" : "text-red"}`}>{t.chg}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 ml-auto shrink-0">
+          <div className="flex items-center gap-1.5 text-xs font-mono-trade text-muted-foreground">
+            <div className="w-1.5 h-1.5 rounded-full bg-green animate-pulse" />
+            LIVE
+          </div>
+          <span className="text-xs font-mono-trade text-muted-foreground">
+            {time.toLocaleTimeString("en-US", { hour12: false })} UTC
+          </span>
+          <div className="w-7 h-7 rounded bg-secondary flex items-center justify-center cursor-pointer hover:bg-accent transition-colors">
+            <Icon name="User" size={14} className="text-muted-foreground" />
+          </div>
+        </div>
+      </header>
+
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <nav className="w-48 border-r border-border shrink-0 py-3 flex flex-col overflow-y-auto bg-background">
+          <div className="space-y-0.5 px-2">
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-mono-trade transition-all rounded border-l-2 ${
+                  activeTab === item.id
+                    ? "border-green bg-green/[0.08] text-green"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-white/[0.03]"
+                }`}
+              >
+                <Icon name={item.icon} size={14} />
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-auto px-4 pt-4 pb-3 border-t border-border mx-3 mt-6">
+            <div className="text-[10px] font-mono-trade text-muted-foreground mb-1 uppercase tracking-widest">Balance</div>
+            <div className="text-sm font-mono-trade text-foreground font-semibold">$284,720</div>
+            <div className="text-[10px] font-mono-trade text-green mt-0.5">+$6,512 today</div>
+          </div>
+        </nav>
+
+        <main className="flex-1 overflow-y-auto p-4 grid-pattern">
+          <div className="mb-4 flex items-center gap-2">
+            <h1 className="text-xs font-mono-trade text-muted-foreground uppercase tracking-widest">
+              {NAV_ITEMS.find((n) => n.id === activeTab)?.label}
+            </h1>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          {renderPage()}
+        </main>
+      </div>
+    </div>
+  );
+}
